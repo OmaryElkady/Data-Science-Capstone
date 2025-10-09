@@ -32,17 +32,30 @@ This repository uses GitHub Actions to ensure code quality and maintain clean Py
 
 ### Local Development Setup
 
-To maintain code quality locally, you can use pre-commit hooks:
+See the [Setup Guide](docs/SETUP.md) for detailed instructions on setting up your development environment.
+
+Quick start:
 
 ```bash
-# Install pre-commit
-pip install pre-commit
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install the git hooks
-pre-commit install
+# Install dependencies
+make install
 
-# (Optional) Run against all files
-pre-commit run --all-files
+# Install development tools (optional but recommended)
+make install-dev
+```
+
+**Using Make commands:**
+```bash
+make help           # Show all available commands
+make format         # Format code with black and isort
+make lint           # Run linting checks
+make check          # Run all quality checks
+make clean          # Clean up cache files
+make clear-outputs  # Clear notebook outputs
 ```
 
 The pre-commit configuration includes:
@@ -80,9 +93,14 @@ pip install -r requirements.txt
 
 ## Contributing
 
-When contributing to this repository:
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed contribution guidelines.
+
+Quick checklist when contributing:
 1. Create a new branch for your changes
-2. Ensure all CI checks pass
-3. Clear notebook outputs before committing
-4. Write descriptive commit messages
-5. Submit a pull request for review
+2. Run `black .` and `isort .` to format your code
+3. Ensure all CI checks pass
+4. Clear notebook outputs before committing
+5. Write descriptive commit messages
+6. Submit a pull request for review
+
+For common code quality issues and fixes, see [docs/CODE_QUALITY_GUIDE.md](docs/CODE_QUALITY_GUIDE.md).
