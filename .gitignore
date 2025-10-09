@@ -18,3 +18,9 @@ dist/
 # Notebook outputs
 /*.html
 dictionary.html
+
+# Pre-commit
+.pre-commit-cache/
+
+# macOS
+.DS_Store
