@@ -1,0 +1,20 @@
+# Ignore dataset and environment files
+flights_sample_3m.csv
+*.csv
+env/
+venv/
+.env
+environment.yml
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+dist/
+*.egg-info/
+# Jupyter checkpoints
+.ipynb_checkpoints/
+# Notebook outputs
+/*.html
+dictionary.html
