@@ -1,26 +1,77 @@
-# Ignore dataset and environment files
+# Data files (exclude all large datasets)
 flights_sample_3m.csv
 *.csv
-env/
-venv/
-.env
-environment.yml
+dataset/
+flights_cleaned.csv
+flights_processed.csv
+
+# Model files and outputs
+*.pkl
+*.npy
+*.joblib
+eda_outputs/
+outputs/
+results/
+*.png
+*.jpg
+*.jpeg
+
+# Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
+*.so
 .Python
 build/
+develop-eggs/
 dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
 *.egg-info/
-# Jupyter checkpoints
-.ipynb_checkpoints/
-# Notebook outputs
-/*.html
-dictionary.html
+.installed.cfg
+*.egg
+MANIFEST
 
-# Pre-commit
-.pre-commit-cache/
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
 
-# macOS
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+
+# Processing files
+processing_summary.json
+feature_info.json
+column_info.json
+
+# Kaggle specific files (keep only the notebook code)
+kaggle_workspace/
+*.zip
