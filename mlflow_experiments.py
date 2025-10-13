@@ -47,84 +47,142 @@ def setup_mlflow():
     return experiment_name
 
 
-def load_sample_data():
+def load_flight_data_from_databricks():
     """
-    Load sample flight data for demonstration.
-    In a real scenario, you would load your actual preprocessed data.
+    Load flight delay data from Databricks tables.
     """
-    print("=== LOADING SAMPLE DATA ===")
+    print("=== LOADING FLIGHT DATA FROM DATABRICKS ===")
 
-    # Try to load your actual processed data first
     try:
-        train_df = pd.read_csv("processed_train_data.csv")
-        test_df = pd.read_csv("processed_test_data.csv")
+        # Method 1: Load from Databricks tables (recommended)
+        print("📊 Loading from Databricks tables...")
 
-        # Get target column (assuming it's the last column)
-        target_column = train_df.columns[-1]
+        # Load your uploaded flight data
+        from pyspark.sql import SparkSession
+
+        spark = SparkSession.builder.appName("MLflowFlightDelay").getOrCreate()
+        flights_df = spark.sql("SELECT * FROM main.default.flights_processed")
+        df = flights_df.toPandas()
+
+        print(f"✅ Loaded flights_processed data: {df.shape}")
+        print(f"📋 Columns: {list(df.columns)}")
+
+        # Display basic info
+        print(f"📈 Delay rate: {df.get('is_delayed_15min', df.iloc[:, -1]).mean():.3f}")
+
+        # Prepare data for ML
+        # Assuming target column is 'is_delayed_15min' or last column
+        target_column = "is_delayed_15min" if "is_delayed_15min" in df.columns else df.columns[-1]
 
         # Separate features and target
-        X_train = train_df.drop(columns=[target_column])
-        y_train = train_df[target_column]
-        X_test = test_df.drop(columns=[target_column])
-        y_test = test_df[target_column]
+        X = df.drop(columns=[target_column])
+        y = df[target_column]
 
-        print(f"Loaded actual data - Train: {X_train.shape}, Test: {X_test.shape}")
-
-    except FileNotFoundError:
-        print("Processed data not found. Creating sample data for demonstration...")
-
-        # Create sample data for demonstration
-        np.random.seed(42)
-        n_samples = 1000
-        n_features = 20
-
-        # Generate sample features (flight data simulation)
-        X = np.random.randn(n_samples, n_features)
-
-        # Create realistic feature names
-        feature_names = [
-            "departure_hour",
-            "departure_delay",
-            "weather_score",
-            "airport_congestion",
-            "airline_delay_history",
-            "route_popularity",
-            "day_of_week",
-            "month",
-            "distance",
-            "aircraft_age",
-            "crew_experience",
-            "fuel_efficiency",
-            "maintenance_score",
-            "passenger_load",
-            "baggage_weight",
-            "wind_speed",
-            "visibility",
-            "temperature",
-            "pressure",
-            "humidity",
-        ]
-
-        X_df = pd.DataFrame(X, columns=feature_names)
-
-        # Create target variable (flight delay probability)
-        # Simulate delay based on multiple factors
-        delay_prob = (
-            0.3 * X_df["departure_delay"]
-            + 0.2 * X_df["weather_score"]
-            + 0.15 * X_df["airport_congestion"]
-            + 0.1 * X_df["airline_delay_history"]
-            + np.random.normal(0, 0.1, n_samples)
-        )
-
-        # Convert to binary classification (delay >= 15 minutes)
-        y = (delay_prob > np.percentile(delay_prob, 70)).astype(int)
+        # Handle any missing values
+        X = X.fillna(X.mean())
+        y = y.fillna(y.mode()[0])
 
         # Split data
-        X_train, X_test, y_train, y_test = train_test_split(X_df, y, test_size=0.2, random_state=42, stratify=y)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
 
-        print(f"Created sample data - Train: {X_train.shape}, Test: {X_test.shape}")
-        print(f"Delay rate - Train: {y_train.mean():.3f}, Test: {y_test.mean():.3f}")
+        print(f"✅ Data prepared - Train: {X_train.shape}, Test: {X_test.shape}")
+        print(f"📊 Delay rate - Train: {y_train.mean():.3f}, Test: {y_test.mean():.3f}")
+
+        return X_train, X_test, y_train, y_test
+
+    except Exception as e:
+        print(f"⚠️  Could not load from tables: {e}")
+
+        try:
+            # Method 2: Load from FileStore (if uploaded as files)
+            print("📁 Trying to load from FileStore...")
+
+            from pyspark.sql import SparkSession
+
+            spark = SparkSession.builder.appName("MLflowFlightDelay").getOrCreate()
+            flights_df = (
+                spark.read.option("header", "true")
+                .option("inferSchema", "true")
+                .csv("/FileStore/shared_uploads/flights_processed.csv")
+            )
+            df = flights_df.toPandas()
+
+            print(f"✅ Loaded from FileStore: {df.shape}")
+
+            # Prepare data
+            target_column = df.columns[-1]  # Assuming target is last column
+            X = df.drop(columns=[target_column])
+            y = df[target_column]
+
+            X = X.fillna(X.mean())
+            y = y.fillna(y.mode()[0])
+
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+
+            return X_train, X_test, y_train, y_test
+
+        except Exception as e2:
+            print(f"⚠️  FileStore load failed: {e2}")
+            print("📊 Creating sample data for demonstration...")
+
+            # Method 3: Fallback to sample data
+            return create_sample_data()
+
+
+def create_sample_data():
+    """
+    Create sample data as fallback.
+    """
+    np.random.seed(42)
+    n_samples = 1000
+    n_features = 20
+
+    # Generate sample features (flight data simulation)
+    X = np.random.randn(n_samples, n_features)
+
+    # Create realistic feature names
+    feature_names = [
+        "departure_hour",
+        "departure_delay",
+        "weather_score",
+        "airport_congestion",
+        "airline_delay_history",
+        "route_popularity",
+        "day_of_week",
+        "month",
+        "distance",
+        "aircraft_age",
+        "crew_experience",
+        "fuel_efficiency",
+        "maintenance_score",
+        "passenger_load",
+        "baggage_weight",
+        "wind_speed",
+        "visibility",
+        "temperature",
+        "pressure",
+        "humidity",
+    ]
+
+    X_df = pd.DataFrame(X, columns=feature_names)
+
+    # Create target variable (flight delay probability)
+    delay_prob = (
+        0.3 * X_df["departure_delay"]
+        + 0.2 * X_df["weather_score"]
+        + 0.15 * X_df["airport_congestion"]
+        + 0.1 * X_df["airline_delay_history"]
+        + np.random.normal(0, 0.1, n_samples)
+    )
+
+    # Convert to binary classification (delay >= 15 minutes)
+    y = (delay_prob > np.percentile(delay_prob, 70)).astype(int)
+
+    # Split data
+    X_train, X_test, y_train, y_test = train_test_split(X_df, y, test_size=0.2, random_state=42, stratify=y)
+
+    print(f"📊 Created sample data - Train: {X_train.shape}, Test: {X_test.shape}")
+    print(f"📈 Delay rate - Train: {y_train.mean():.3f}, Test: {y_test.mean():.3f}")
 
     return X_train, X_test, y_train, y_test
 
@@ -420,8 +478,8 @@ def main():
     # Setup MLflow
     experiment_name = setup_mlflow()
 
-    # Load data
-    X_train, X_test, y_train, y_test = load_sample_data()
+    # Load data from Databricks
+    X_train, X_test, y_train, y_test = load_flight_data_from_databricks()
 
     # Store experiment results
     experiment_results = {}
