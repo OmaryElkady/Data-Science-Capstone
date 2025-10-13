@@ -6,3 +6,4 @@ jupyter
 scipy
 scikit-learn
 notebook
+mlflow>=2.8.0
