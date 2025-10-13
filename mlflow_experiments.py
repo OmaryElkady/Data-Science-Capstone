@@ -78,6 +78,22 @@ def load_flight_data_from_databricks():
         X = df.drop(columns=[target_column])
         y = df[target_column]
 
+        # Handle timestamp columns - convert to numeric or drop
+        timestamp_columns = []
+        for col in X.columns:
+            if X[col].dtype == "object" or "datetime" in str(X[col].dtype):
+                try:
+                    # Try to convert to numeric
+                    X[col] = pd.to_numeric(X[col], errors="coerce")
+                except Exception:
+                    # If conversion fails, mark for dropping
+                    timestamp_columns.append(col)
+
+        # Drop columns that couldn't be converted
+        if timestamp_columns:
+            print(f"⚠️  Dropping timestamp columns: {timestamp_columns}")
+            X = X.drop(columns=timestamp_columns)
+
         # Handle any missing values
         X = X.fillna(X.mean())
         y = y.fillna(y.mode()[0])
@@ -113,6 +129,19 @@ def load_flight_data_from_databricks():
             target_column = df.columns[-1]  # Assuming target is last column
             X = df.drop(columns=[target_column])
             y = df[target_column]
+
+            # Handle timestamp columns
+            timestamp_columns = []
+            for col in X.columns:
+                if X[col].dtype == "object" or "datetime" in str(X[col].dtype):
+                    try:
+                        X[col] = pd.to_numeric(X[col], errors="coerce")
+                    except Exception:
+                        timestamp_columns.append(col)
+
+            if timestamp_columns:
+                print(f"⚠️  Dropping timestamp columns: {timestamp_columns}")
+                X = X.drop(columns=timestamp_columns)
 
             X = X.fillna(X.mean())
             y = y.fillna(y.mode()[0])
