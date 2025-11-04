@@ -29,9 +29,11 @@ def setup_mlflow():
     Set up MLflow for Databricks platform.
     """
     print("=== MLFLOW SETUP FOR DATABRICKS ===")
+    mlflow.set_tracking_uri("databricks")
+    mlflow.set_registry_uri("databricks-uc")
 
     # Set experiment name
-    experiment_name = "Flightmasters_Flight_Delay_Prediction"
+    experiment_name = "/Users/kshitijmishra231@gmail.com/Flightmasters_Flight_Delay_Prediction"
 
     # Create or get experiment
     try:
@@ -49,114 +51,59 @@ def setup_mlflow():
 
 def load_flight_data_from_databricks():
     """
-    Load flight delay data from Databricks tables.
+    Load flight delay data from Databricks tables and preprocess it for ML.
     """
     print("=== LOADING FLIGHT DATA FROM DATABRICKS ===")
 
     try:
-        # Method 1: Load from Databricks tables (recommended)
         print("📊 Loading from Databricks tables...")
-
-        # Load your uploaded flight data
         from pyspark.sql import SparkSession
-
         spark = SparkSession.builder.appName("MLflowFlightDelay").getOrCreate()
-        flights_df = spark.sql("SELECT * FROM main.default.flights_processed")
+        flights_df = spark.sql("SELECT * FROM workspace.google_drive.flights_processed")
         df = flights_df.toPandas()
-
         print(f"✅ Loaded flights_processed data: {df.shape}")
-        print(f"📋 Columns: {list(df.columns)}")
 
-        # Display basic info
-        print(f"📈 Delay rate: {df.get('is_delayed_15min', df.iloc[:, -1]).mean():.3f}")
+        # --- START: NEW PREPROCESSING CODE ---
 
-        # Prepare data for ML
-        # Assuming target column is 'is_delayed_15min' or last column
-        target_column = "is_delayed_15min" if "is_delayed_15min" in df.columns else df.columns[-1]
+        # 1. Define the target variable
+        target_column = "is_delayed_15_min"
 
-        # Separate features and target
-        X = df.drop(columns=[target_column])
+        # 2. Select only columns with number-like data types for our features (X)
+        # This automatically ignores strings, dates, and timestamps.
+        X = df.select_dtypes(include=np.number)
+
+        # 3. Explicitly drop the target column and any other non-feature columns from X
+        if target_column in X.columns:
+            X = X.drop(columns=[target_column])
+        # Also drop other target-like columns to prevent data leakage
+        leaky_columns = ['is_delayed_30_min', 'is_delayed_any', 'arr_delay']
+        X = X.drop(columns=[col for col in leaky_columns if col in X.columns])
+
+        # 4. Define our target data (y)
         y = df[target_column]
 
-        # Handle timestamp columns - convert to numeric or drop
-        timestamp_columns = []
-        for col in X.columns:
-            if X[col].dtype == "object" or "datetime" in str(X[col].dtype):
-                try:
-                    # Try to convert to numeric
-                    X[col] = pd.to_numeric(X[col], errors="coerce")
-                except Exception:
-                    # If conversion fails, mark for dropping
-                    timestamp_columns.append(col)
+        print("✅ Preprocessing complete: Selected only numeric features.")
+        print(f"📋 Using {len(X.columns)} features: {list(X.columns)}")
 
-        # Drop columns that couldn't be converted
-        if timestamp_columns:
-            print(f"⚠️  Dropping timestamp columns: {timestamp_columns}")
-            X = X.drop(columns=timestamp_columns)
+        # --- END: NEW PREPROCESSING CODE ---
 
-        # Handle any missing values
+        # Handle any missing values in the remaining numeric columns
         X = X.fillna(X.mean())
         y = y.fillna(y.mode()[0])
 
         # Split data
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
-
         print(f"✅ Data prepared - Train: {X_train.shape}, Test: {X_test.shape}")
+        
+        # Now the delay rate should be a valid probability (between 0 and 1)
         print(f"📊 Delay rate - Train: {y_train.mean():.3f}, Test: {y_test.mean():.3f}")
 
         return X_train, X_test, y_train, y_test
 
     except Exception as e:
-        print(f"⚠️  Could not load from tables: {e}")
-
-        try:
-            # Method 2: Load from FileStore (if uploaded as files)
-            print("📁 Trying to load from FileStore...")
-
-            from pyspark.sql import SparkSession
-
-            spark = SparkSession.builder.appName("MLflowFlightDelay").getOrCreate()
-            flights_df = (
-                spark.read.option("header", "true")
-                .option("inferSchema", "true")
-                .csv("/FileStore/shared_uploads/flights_processed.csv")
-            )
-            df = flights_df.toPandas()
-
-            print(f"✅ Loaded from FileStore: {df.shape}")
-
-            # Prepare data
-            target_column = df.columns[-1]  # Assuming target is last column
-            X = df.drop(columns=[target_column])
-            y = df[target_column]
-
-            # Handle timestamp columns
-            timestamp_columns = []
-            for col in X.columns:
-                if X[col].dtype == "object" or "datetime" in str(X[col].dtype):
-                    try:
-                        X[col] = pd.to_numeric(X[col], errors="coerce")
-                    except Exception:
-                        timestamp_columns.append(col)
-
-            if timestamp_columns:
-                print(f"⚠️  Dropping timestamp columns: {timestamp_columns}")
-                X = X.drop(columns=timestamp_columns)
-
-            X = X.fillna(X.mean())
-            y = y.fillna(y.mode()[0])
-
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
-
-            return X_train, X_test, y_train, y_test
-
-        except Exception as e2:
-            print(f"⚠️  FileStore load failed: {e2}")
-            print("📊 Creating sample data for demonstration...")
-
-            # Method 3: Fallback to sample data
-            return create_sample_data()
-
+        print(f"⚠️  An error occurred: {e}")
+        print("📊 Creating sample data for demonstration...")
+        return create_sample_data() # Fallback to sample data on error
 
 def create_sample_data():
     """
