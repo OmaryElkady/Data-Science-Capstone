@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Comprehensive Flight Data Processing Pipeline
+ENSURE the code in the Kaggle_Table_Generation notebook has been run before running this script
 This updated script takes the original dataset from the delta lake and produces a single cleaned, standardized, and feature engineered dataset, uploading it to the delta lake as SILVER_TABLE
 """
 
