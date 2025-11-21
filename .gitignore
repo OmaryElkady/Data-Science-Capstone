@@ -4,6 +4,8 @@ flights_sample_3m.csv
 dataset/
 flights_cleaned.csv
 flights_processed.csv
+# Allow temporal features dataset
+!dataset/flights_cleaned_temporal.csv
 
 # Model files and outputs
 *.pkl
