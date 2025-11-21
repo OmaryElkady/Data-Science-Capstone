@@ -22,9 +22,14 @@ def setup_mlflow():
     except ImportError as e:
         print(f"❌ MLflow import failed: {e}")
         return False
+    
+
+    mlflow.set_tracking_uri("databricks")
+    mlflow.set_registry_uri("databricks-uc")
+    print("✅ Set tracking and registry URIs to Databricks")
 
     # Set experiment name
-    experiment_name = "Flightmasters_Flight_Delay_Prediction"
+    experiment_name = "/Users/kshitijmishra231@gmail.com/Flightmasters_Flight_Delay_Prediction"
     print(f"📊 Setting up experiment: {experiment_name}")
 
     try:
