@@ -22,7 +22,6 @@ def setup_mlflow():
     except ImportError as e:
         print(f"❌ MLflow import failed: {e}")
         return False
-    
 
     mlflow.set_tracking_uri("databricks")
     mlflow.set_registry_uri("databricks-uc")
