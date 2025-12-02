@@ -51,8 +51,8 @@ dbutils.widgets.text("airline_iata", "", "3. Airline Code (e.g., AA)")
 dbutils.widgets.text("flight_date", "", "4. Flight Date (YYYY-MM-DD)")
 dbutils.widgets.text("origin_airport", "", "5. Origin Airport (e.g., ATL)")
 dbutils.widgets.text("dest_airport", "", "6. Destination Airport (e.g., LAX)")
-dbutils.widgets.text("dep_time", "", "7. Departure Time (HHMM, e.g., 1430)")
-dbutils.widgets.text("arr_time", "", "8. Arrival Time (HHMM)")
+dbutils.widgets.text("dep_time", "", "7. Departure Time UTC (HHMM, e.g., 1430)")
+dbutils.widgets.text("arr_time", "", "8. Arrival Time UTC (HHMM)")
 dbutils.widgets.text("dep_delay", "0", "9. Departure Delay (minutes)")
 
 print("✅ Widgets created - configure in sidebar")
@@ -216,7 +216,7 @@ print("✅ Helper functions defined")
 
 # COMMAND ----------
 
-def fetch_aviation_data_filtered(access_key, flight_iata=None, airline_iata=None, flight_date=None):
+def fetch_aviation_data_filtered(access_key, airline_iata=None, origin_airport=None, dest_airport=None):
     """
     Fetch flight data from Aviation Stack API with filters.
     """
@@ -224,18 +224,21 @@ def fetch_aviation_data_filtered(access_key, flight_iata=None, airline_iata=None
     
     params = {
         'access_key': access_key,
-        'limit': 10,
+        'dep_iata': origin_airport,
+        'arr_iata': dest_airport,
+        "airline_iata": airline_iata,
+        'limit': 100,
     }
     
-    if flight_iata:
-        params['flight_iata'] = flight_iata
-        print(f"   Filter: Flight {flight_iata}")
+    #if flight_iata:
+    #    params['flight_iata'] = flight_iata
+    #    print(f"   Filter: Flight {flight_iata}")
     if airline_iata:
         params['airline_iata'] = airline_iata
         print(f"   Filter: Airline {airline_iata}")
-    if flight_date:
-        params['flight_date'] = flight_date
-        print(f"   Filter: Date {flight_date}")
+    #if flight_date:
+    #    params['flight_date'] = flight_date
+    #    print(f"   Filter: Date {flight_date}")
     
     try:
         response = requests.get(f'{BASE_URL}{FREE_TIER_ENDPOINT}', params=params)
@@ -326,27 +329,31 @@ def create_manual_flight_record():
     print(f"✅ Manual flight record created")
     return df
 
+def run_flight_lookup():
+    # Get lookup mode
+    lookup_mode = dbutils.widgets.get("lookup_mode")
 
-# Get lookup mode
-lookup_mode = dbutils.widgets.get("lookup_mode")
+    if lookup_mode == "API":
+        print("\n🌐 MODE: API Data Fetch")
+        airline_iata = dbutils.widgets.get("airline_iata") or None
+        origin_airport = dbutils.widgets.get("origin_airport") or None
+        dest_airport = dbutils.widgets.get("dest_airport") or None
+        
+        raw_df = fetch_aviation_data_filtered(API_KEY, airline_iata, origin_airport, dest_airport)
+    else:
+        print("\n✍️ MODE: Manual Flight Entry")
+        raw_df = create_manual_flight_record()
 
-if lookup_mode == "API":
-    print("\n🌐 MODE: API Data Fetch")
-    flight_iata = dbutils.widgets.get("flight_iata") or None
-    airline_iata = dbutils.widgets.get("airline_iata") or None
-    flight_date = dbutils.widgets.get("flight_date") or None
-    
-    raw_df = fetch_aviation_data_filtered(API_KEY, flight_iata, airline_iata, flight_date)
-else:
-    print("\n✍️ MODE: Manual Flight Entry")
-    raw_df = create_manual_flight_record()
+    # Display results
+    if not raw_df.empty:
+        print("\n📋 Flight Data Retrieved:")
+        display(raw_df.head(10))
+    else:
+        print("🛑 No flight data available")
 
-# Display results
-if not raw_df.empty:
-    print("\n📋 Flight Data Retrieved:")
-    display(raw_df.head(10))
-else:
-    print("🛑 No flight data available")
+    return raw_df
+
+raw_df = run_flight_lookup()
 
 # COMMAND ----------
 
@@ -1088,4 +1095,39 @@ print("\n✅ Enhanced API Pipeline complete!")
 
 # COMMAND ----------
 
+"""
+# Run this block to clear the 
+# Paths and table names
+API_RESULTS_PATH = "/Volumes/workspace/default/ds-capstone/api_pipeline_results/flights_lookup"
+API_RESULTS_TABLE = "default.api_pipeline_flight_lookups"
 
+SILVER_PATH = f"{API_RESULTS_PATH}/silver"
+GOLD_PATH = f"{API_RESULTS_PATH}/gold"
+
+SILVER_TABLE = f"{API_RESULTS_TABLE}_silver"
+GOLD_TABLE = f"{API_RESULTS_TABLE}_gold"
+
+print("🧹 Starting cleanup...")
+
+# -----------------------------------------
+# 1. DROP TABLES IF THEY EXIST
+# -----------------------------------------
+for tbl in [SILVER_TABLE, GOLD_TABLE]:
+    try:
+        spark.sql(f"DROP TABLE IF EXISTS {tbl}")
+        print(f"   ✅ Dropped table: {tbl}")
+    except Exception as e:
+        print(f"   ⚠️ Could not drop table {tbl}: {e}")
+
+# -----------------------------------------
+# 2. DELETE DELTA DIRECTORIES
+# -----------------------------------------
+for path in [SILVER_PATH, GOLD_PATH]:
+    try:
+        dbutils.fs.rm(path, True)  # recursive delete
+        print(f"   🗑️ Deleted Delta directory: {path}")
+    except Exception as e:
+        print(f"   ⚠️ Could not delete path {path}: {e}")
+
+print("\n🎉 Cleanup complete! Tables and data fully removed.")
+"""
