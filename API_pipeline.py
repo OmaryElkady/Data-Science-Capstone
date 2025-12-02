@@ -33,6 +33,8 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, avg, lit, when, broadcast, upper, trim
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType, DateType, BooleanType
 import warnings
+import pytz
+from datetime import datetime
 warnings.filterwarnings('ignore')
 
 print("✅ Imports loaded successfully")
@@ -54,6 +56,12 @@ dbutils.widgets.text("dest_airport", "", "6. Destination Airport (e.g., LAX)")
 dbutils.widgets.text("dep_time", "", "7. Departure Time UTC (HHMM, e.g., 1430)")
 dbutils.widgets.text("arr_time", "", "8. Arrival Time UTC (HHMM)")
 dbutils.widgets.text("dep_delay", "0", "9. Departure Delay (minutes)")
+
+# ===== GLOBALS FOR CACHING =====
+_last_lookup_mode = None
+_last_api_params = None
+_last_api_result = pd.DataFrame()
+
 
 print("✅ Widgets created - configure in sidebar")
 print("\n💡 Instructions:")
@@ -105,17 +113,58 @@ print(f"📦 Reference tables configured")
 
 # COMMAND ----------
 
-def convert_utc_to_hhmm(utc_str):
-    """Convert UTC timestamp to HHMM integer format."""
-    if pd.isna(utc_str) or not utc_str:
+try:
+    from dateutil import parser as dateutil_parser
+    _has_dateutil = True
+except:
+    _has_dateutil = False
+
+def fix_timestamp_smart(ts_str, tz_name):
+    """
+    Convert timestamp string to UTC using tz_name, treating input as local time.
+    Ignores any existing offset in ts_str.
+    """
+    if pd.isna(ts_str) or pd.isna(tz_name):
+        return pd.NaT
+    s = str(ts_str).strip()
+    if s == "" or s.lower() in {"none", "nat", "nan"}:
+        return pd.NaT
+    try:
+        # Parse as naive datetime (ignore offset if present)
+        if _has_dateutil:
+            naive = dateutil_parser.parse(s, fuzzy=True, ignoretz=True)
+        else:
+            naive = pd.to_datetime(s, errors='coerce')
+        if naive is None or pd.isna(naive):
+            return pd.NaT
+    except Exception as e:
+        return pd.NaT
+    try:
+        tz = pytz.timezone(str(tz_name))
+        localized = tz.localize(naive)
+        ts_utc = localized.astimezone(pytz.utc)
+        return pd.Timestamp(ts_utc)
+    except Exception as e:
+        return pd.NaT
+
+
+def convert_utc_to_hhmm(dt):
+    """Convert a UTC timestamp (string or pandas.Timestamp) to HHMM integer format."""
+    if pd.isna(dt):
         return np.nan
     try:
-        dt_utc = datetime.fromisoformat(utc_str.replace('Z', '+00:00'))
-        return dt_utc.hour * 100 + dt_utc.minute
+        # If it's a string, parse it first
+        if isinstance(dt, str):
+            dt = pd.to_datetime(dt, utc=True)
+        elif isinstance(dt, pd.Timestamp):
+            if dt.tzinfo is None:
+                dt = dt.tz_localize('UTC')
+        else:
+            dt = pd.to_datetime(dt, utc=True)
+        hhmm = dt.hour * 100 + dt.minute
+        return hhmm
     except Exception as e:
-        print(f"⚠️ Time conversion error: {e}")
         return np.nan
-
 
 def get_season(month):
     """Map month number to season."""
@@ -309,40 +358,66 @@ def create_manual_flight_record():
     
     # Create record
     record = {
-        'flight_date': flight_date,
-        'airline.name': airline_name,
-        'airline.iata': airline_code,
-        'flight.number': flight_num,
-        'flight.iata': f"{airline_code}{flight_num}",
-        'departure.airport': origin,
-        'arrival.airport': dest,
-        'departure.scheduled': f"{flight_date}T{dep_time[:2] if dep_time else '00'}:{dep_time[2:] if len(dep_time) > 2 else '00'}:00+00:00" if dep_time else None,
-        'arrival.scheduled': f"{flight_date}T{arr_time[:2] if arr_time else '00'}:{arr_time[2:] if len(arr_time) > 2 else '00'}:00+00:00" if arr_time else None,
-        'departure.delay': int(dep_delay) if dep_delay else 0,
-        'arrival.delay': None,  # Unknown for prediction
-        'distance_km': distance,
-        'elapsed_time_min': elapsed_time,
-        'flight_status': 'scheduled'
+    'flight_date': flight_date,
+    'airline.name': airline_name.replace(" Inc.", ""),  # normalize
+    'airline.iata': airline_code,
+    'flight.number': flight_num,
+    'flight.iata': f"{airline_code}{flight_num}",
+    'departure.iata': origin,      # changed from departure.airport
+    'arrival.iata': dest,          # changed from arrival.airport
+    'departure.scheduled': f"{flight_date}T{dep_time[:2] if dep_time else '00'}:{dep_time[2:] if len(dep_time) > 2 else '00'}:00+00:00" if dep_time else None,
+    'arrival.scheduled': f"{flight_date}T{arr_time[:2] if arr_time else '00'}:{arr_time[2:] if len(arr_time) > 2 else '00'}:00+00:00" if arr_time else None,
+    'departure.delay': int(dep_delay) if dep_delay else 0,
+    'arrival.delay': None,  # Unknown for prediction
+    'distance_km': distance,
+    'elapsed_time_min': elapsed_time,
+    'flight_status': 'scheduled'
     }
+
     
     df = pd.DataFrame([record])
     print(f"✅ Manual flight record created")
     return df
 
+
+
 def run_flight_lookup():
+    global _last_lookup_mode, _last_api_params, _last_api_result
+
     # Get lookup mode
-    lookup_mode = dbutils.widgets.get("lookup_mode")
+    lookup_mode = dbutils.widgets.get("lookup_mode").strip().upper()
+    print(f"🔹 Selected lookup mode: {lookup_mode}")
 
     if lookup_mode == "API":
-        print("\n🌐 MODE: API Data Fetch")
+        # Fetch current API filter values
         airline_iata = dbutils.widgets.get("airline_iata") or None
         origin_airport = dbutils.widgets.get("origin_airport") or None
         dest_airport = dbutils.widgets.get("dest_airport") or None
-        
-        raw_df = fetch_aviation_data_filtered(API_KEY, airline_iata, origin_airport, dest_airport)
-    else:
+
+        current_params = {
+            "airline_iata": airline_iata,
+            "origin_airport": origin_airport,
+            "dest_airport": dest_airport
+        }
+
+        # Only call API if previous mode wasn't API OR parameters changed
+        if _last_lookup_mode != "API" or _last_api_params != current_params:
+            print("\n🌐 MODE: API Data Fetch (calling API)...")
+            _last_api_result = fetch_aviation_data_filtered(API_KEY, airline_iata, origin_airport, dest_airport)
+            _last_api_params = current_params
+        else:
+            print("\n🌐 MODE: API Data Fetch (using cached result)")
+
+        raw_df = _last_api_result.copy()
+
+    elif lookup_mode == "MANUAL":
         print("\n✍️ MODE: Manual Flight Entry")
         raw_df = create_manual_flight_record()
+    else:
+        print(f"⚠️ Unknown lookup mode '{lookup_mode}', defaulting to manual input")
+        raw_df = create_manual_flight_record()
+
+    _last_lookup_mode = lookup_mode
 
     # Display results
     if not raw_df.empty:
@@ -351,9 +426,63 @@ def run_flight_lookup():
     else:
         print("🛑 No flight data available")
 
+    # ===== FAILSAFE: Ensure API result contains the requested flight AND date =====
+    if lookup_mode == "API":
+        requested_flight = dbutils.widgets.get("flight_iata").upper().strip()
+        requested_date = dbutils.widgets.get("flight_date").strip()
+
+        if requested_flight and len(requested_flight) >= 3 and requested_date:
+
+            possible_flight_cols = ["flight.iata", "flight.number"]
+            possible_date_cols = ["departure.scheduled", "departure.estimated", "departure.actual", "flight_date"]
+
+            found_match = False
+
+            for fcol in possible_flight_cols:
+                if fcol not in raw_df.columns:
+                    continue
+
+                flight_matches = raw_df[fcol].astype(str).str.upper().str.contains(requested_flight)
+
+                if not flight_matches.any():
+                    continue
+
+                matching_rows = raw_df[flight_matches]
+
+                for dcol in possible_date_cols:
+                    if dcol not in matching_rows.columns:
+                        continue
+
+                    # Extract only YYYY-MM-DD from timestamp fields
+                    def clean_date(val):
+                        if pd.isna(val):
+                            return None
+                        s = str(val)
+                        return s[:10] if len(s) >= 10 else None
+
+                    dates_cleaned = matching_rows[dcol].apply(clean_date)
+
+                    if requested_date in dates_cleaned.values:
+                        found_match = True
+                        break
+
+                if found_match:
+                    break
+
+            if not found_match:
+                print("\n⚠️ WARNING: No valid API data found for the requested flight/date.")
+                print(f"   Flight: {requested_flight}")
+                print(f"   Date:   {requested_date}")
+                print("   ➤ AviationStack only returns live/recent data. (Flights often re-use numbers daily)")
+                print("   ➤ Your requested flight may be too far in the future or past.")
+                print("\n💡 Please switch to **Manual Mode** and enter the flight details manually.\n")
+
     return raw_df
 
+
+# Run the lookup
 raw_df = run_flight_lookup()
+
 
 # COMMAND ----------
 
@@ -436,17 +565,27 @@ def prepare_silver_from_api(raw_df):
         silver_df['DEST'] = 'UNKNOWN'
     
     # ===== STEP 5: Scheduled Times =====
+    # Normalize to UTC first
+    if 'departure.scheduled' in df.columns and 'departure.timezone' in df.columns:
+        df['departure.scheduled'] = df.apply(
+            lambda row: fix_timestamp_smart(row['departure.scheduled'], row['departure.timezone']),
+            axis=1
+        )
+
+    if 'arrival.scheduled' in df.columns and 'arrival.timezone' in df.columns:
+        df['arrival.scheduled'] = df.apply(
+            lambda row: fix_timestamp_smart(row['arrival.scheduled'], row['arrival.timezone']),
+            axis=1
+        )
+
+    # Now convert to HHMM integers
     if 'departure.scheduled' in df.columns:
         silver_df['CRS_DEP_TIME'] = df['departure.scheduled'].apply(convert_utc_to_hhmm)
-    elif 'dep_time' in df.columns:
-        silver_df['CRS_DEP_TIME'] = pd.to_numeric(df['dep_time'], errors='coerce')
     else:
         silver_df['CRS_DEP_TIME'] = 0
 
     if 'arrival.scheduled' in df.columns:
         silver_df['CRS_ARR_TIME'] = df['arrival.scheduled'].apply(convert_utc_to_hhmm)
-    elif 'arr_time' in df.columns:
-        silver_df['CRS_ARR_TIME'] = pd.to_numeric(df['arr_time'], errors='coerce')
     else:
         silver_df['CRS_ARR_TIME'] = 0
 
@@ -1159,3 +1298,4 @@ for path in [SILVER_PATH, GOLD_PATH]:
 
 print("\n🎉 Cleanup complete! Tables and data fully removed.")
 """
+
