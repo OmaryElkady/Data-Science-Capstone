@@ -253,14 +253,25 @@ print(f"\n   Records ready for prediction: {df_ml_prep.count()}")
 
 # COMMAND ----------
 
-#TODO: FIx the error and get predictions
+from pyspark.ml.feature import (
+    StringIndexer,
+    OneHotEncoder,
+    VectorAssembler,
+    StandardScaler
+)
+from pyspark.ml import Pipeline
+
 print("\n⚡ Building feature engineering pipeline...")
 print("   (Matching Gold_table.py and experiment training)")
 
 # Categorical features
 categorical_indexed = [f"{c}_index" for c in Config.CATEGORICAL_FEATURES]
 indexers = [
-    StringIndexer(inputCol=c, outputCol=f"{c}_index", handleInvalid="keep")
+    StringIndexer(
+        inputCol=c,
+        outputCol=f"{c}_index",
+        handleInvalid="keep"
+    )
     for c in Config.CATEGORICAL_FEATURES
 ]
 print(f"   ✅ Created {len(indexers)} string indexers")
@@ -275,7 +286,11 @@ encoder = OneHotEncoder(
 print(f"   ✅ Created one-hot encoder")
 
 # Assemble all features
-all_features = Config.NUMERICAL_FEATURES + Config.BOOLEAN_FEATURES + categorical_encoded
+all_features = (
+    Config.NUMERICAL_FEATURES
+    + Config.BOOLEAN_FEATURES
+    + categorical_encoded
+)
 
 assembler = VectorAssembler(
     inputCols=all_features,
@@ -294,7 +309,9 @@ scaler = StandardScaler(
 print(f"   ✅ Created standard scaler")
 
 # Build pipeline
-pipeline = Pipeline(stages=indexers + [encoder, assembler, scaler])
+pipeline = Pipeline(
+    stages=indexers + [encoder, assembler, scaler]
+)
 print(f"\n   🚀 Pipeline ready with {len(indexers) + 3} stages")
 
 # COMMAND ----------
