@@ -425,13 +425,13 @@ def prepare_silver_from_api(raw_df):
         silver_df['FL_NUMBER'] = 0
     
     # ===== STEP 4: Airports =====
-    if 'departure.airport' in df.columns:
-        silver_df['ORIGIN'] = df['departure.airport'].str.upper()
+    if 'departure.iata' in df.columns:
+        silver_df['ORIGIN'] = df['departure.iata'].str.upper()
     else:
         silver_df['ORIGIN'] = 'UNKNOWN'
     
-    if 'arrival.airport' in df.columns:
-        silver_df['DEST'] = df['arrival.airport'].str.upper()
+    if 'arrival.iata' in df.columns:
+        silver_df['DEST'] = df['arrival.iata'].str.upper()
     else:
         silver_df['DEST'] = 'UNKNOWN'
     
@@ -442,62 +442,90 @@ def prepare_silver_from_api(raw_df):
         silver_df['CRS_DEP_TIME'] = pd.to_numeric(df['dep_time'], errors='coerce')
     else:
         silver_df['CRS_DEP_TIME'] = 0
-    
+
     if 'arrival.scheduled' in df.columns:
         silver_df['CRS_ARR_TIME'] = df['arrival.scheduled'].apply(convert_utc_to_hhmm)
     elif 'arr_time' in df.columns:
         silver_df['CRS_ARR_TIME'] = pd.to_numeric(df['arr_time'], errors='coerce')
     else:
         silver_df['CRS_ARR_TIME'] = 0
-    
+
+
+    # ===== NEW: Compute CRS_ELAPSED_TIME directly from CRS_DEP_TIME and CRS_ARR_TIME =====
+    def calculate_elapsed(dep_hhmm, arr_hhmm):
+        """Return elapsed time in minutes, handling midnight rollover."""
+        try:
+            dep_h = dep_hhmm // 100
+            dep_m = dep_hhmm % 100
+            arr_h = arr_hhmm // 100
+            arr_m = arr_hhmm % 100
+
+            dep_minutes = dep_h * 60 + dep_m
+            arr_minutes = arr_h * 60 + arr_m
+
+            # Allow rollover across midnight
+            if arr_minutes < dep_minutes:
+                arr_minutes += 24 * 60
+
+            return arr_minutes - dep_minutes
+        except:
+            return np.nan
+
+    silver_df['CRS_ELAPSED_TIME'] = silver_df.apply(
+        lambda row: calculate_elapsed(row['CRS_DEP_TIME'], row['CRS_ARR_TIME'])
+        if (row['CRS_DEP_TIME'] > 0 and row['CRS_ARR_TIME'] > 0) else np.nan,
+        axis=1
+    )
+
+
     # ===== STEP 6: Delays =====
     if 'departure.delay' in df.columns:
         silver_df['DEP_DELAY'] = pd.to_numeric(df['departure.delay'], errors='coerce').fillna(0)
     else:
         silver_df['DEP_DELAY'] = 0
-    
+
     if 'arrival.delay' in df.columns:
         silver_df['arrival_delay'] = pd.to_numeric(df['arrival.delay'], errors='coerce')
     else:
         silver_df['arrival_delay'] = np.nan  # Unknown for predictions
-    
-    # ===== STEP 7: Distance and Elapsed Time (with real data lookup) =====
+
+
+    # ===== STEP 7: Distance and Elapsed Time (with real data lookup, but ONLY when needed) =====
     print("   🔍 Filling missing distance and elapsed time with real route data...")
-    
+
     for idx in silver_df.index:
         origin = silver_df.loc[idx, 'ORIGIN']
         dest = silver_df.loc[idx, 'DEST']
-        
-        # Check if we need to fill these values
-        needs_distance = 'distance_km' not in df.columns or pd.isna(df.loc[idx, 'distance_km'] if idx < len(df) else np.nan)
-        needs_elapsed = 'elapsed_time_min' not in df.columns or pd.isna(df.loc[idx, 'elapsed_time_min'] if idx < len(df) else np.nan)
-        
+
+        # FIX: Check CRS_ELAPSED_TIME (computed above), NOT raw df['elapsed_time_min']
+        needs_distance = ('DISTANCE' not in silver_df.columns) or pd.isna(silver_df.loc[idx, 'DISTANCE'])
+        needs_elapsed = pd.isna(silver_df.loc[idx, 'CRS_ELAPSED_TIME'])
+
         if needs_distance or needs_elapsed:
             route_stats = get_route_stats(origin, dest)
-            
+
             if route_stats:
                 if needs_distance:
                     silver_df.loc[idx, 'DISTANCE'] = route_stats['distance']
-                if needs_elapsed:
+                if needs_elapsed:  # only overwrite if CRS time missing
                     silver_df.loc[idx, 'CRS_ELAPSED_TIME'] = route_stats['elapsed_time']
             else:
-                # No historical data available
                 if needs_distance:
                     silver_df.loc[idx, 'DISTANCE'] = 0
                 if needs_elapsed:
                     silver_df.loc[idx, 'CRS_ELAPSED_TIME'] = 0
+
         else:
-            # Use values from input if available
+            # Use input values if present
             if 'distance_km' in df.columns and idx < len(df):
                 silver_df.loc[idx, 'DISTANCE'] = df.loc[idx, 'distance_km']
             if 'elapsed_time_min' in df.columns and idx < len(df):
                 silver_df.loc[idx, 'CRS_ELAPSED_TIME'] = df.loc[idx, 'elapsed_time_min']
-    
-    # Fill any remaining nulls
-    silver_df['DISTANCE'] = silver_df.get('DISTANCE', 0).fillna(0)
-    silver_df['CRS_ELAPSED_TIME'] = silver_df.get('CRS_ELAPSED_TIME', 0).fillna(0)
-    
-    print("   ✅ Distance and elapsed time populated with real data")
+        
+        # Fill any remaining nulls
+        silver_df['DISTANCE'] = silver_df.get('DISTANCE', 0).fillna(0)
+        silver_df['CRS_ELAPSED_TIME'] = silver_df.get('CRS_ELAPSED_TIME', 0).fillna(0)
+        
     
     # ===== STEP 8: Rename columns to match Silver table =====
     column_mapping = {
