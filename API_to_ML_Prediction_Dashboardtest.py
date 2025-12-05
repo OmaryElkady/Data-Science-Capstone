@@ -15,6 +15,9 @@
 # MAGIC - Unity Catalog Volume: `/Volumes/workspace/default/mlflow_shared_tmp`
 # MAGIC - Models registered in Unity Catalog
 # MAGIC - API Gold table: `default.api_pipeline_flight_lookups_gold`
+# MAGIC
+# MAGIC
+# MAGIC The three notebooks API_to_ML_Prediction_Dashboard, API_to_ML_Prediction_Dashboardtest, and API_to_ML_Ready_Complete all are non-functional due to the continued restictions we faced due to utilizing Databricks Community Edition
 
 # COMMAND ----------
 
