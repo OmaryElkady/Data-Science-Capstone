@@ -17,6 +17,8 @@
 # MAGIC 3. **Bronze → Silver → Gold**: Apply same transformations as main pipeline
 # MAGIC 4. **Validation**: Verify schema matches Silver and Gold tables
 # MAGIC 5. **Storage**: Save results for future reference
+# MAGIC
+# MAGIC This is as far as we got in our final project implementation. API data can be injested and mostly prepared using the code found in this notebook, but the final preparation steps needed to convert the new data into a format that is ready for our models, and the actually calling of the models themselves on the data was to be handled in the next notebook but the issues we faced with Databricks Community Edition halted project progress.
 
 # COMMAND ----------
 

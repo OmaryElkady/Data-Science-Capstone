@@ -17,6 +17,8 @@
 # MAGIC **Requirements:**
 # MAGIC - Run Enhanced_API_Pipeline notebook first to generate API data
 # MAGIC - Models must be registered in Unity Catalog
+# MAGIC
+# MAGIC The three notebooks API_to_ML_Prediction_Dashboard, API_to_ML_Prediction_Dashboardtest, and API_to_ML_Ready_Complete all are non-functional due to the continued restictions we faced due to utilizing Databricks Community Edition
 
 # COMMAND ----------
 

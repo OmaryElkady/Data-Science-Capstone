@@ -3,6 +3,9 @@
 # MAGIC # Transform API Gold Table for ML Inference
 # MAGIC
 # MAGIC **Purpose:** Prepare `api_pipeline_flight_lookups_gold` so that it matches exactly the feature order of `gold_ml_features_experimental`, including top-40 feature selection, ready for Pre-Departure/In-Flight models.
+# MAGIC
+# MAGIC
+# MAGIC The three notebooks API_to_ML_Prediction_Dashboard, API_to_ML_Prediction_Dashboardtest, and API_to_ML_Ready_Complete all are non-functional due to the continued restictions we faced due to utilizing Databricks Community Edition
 
 # COMMAND ----------
 
