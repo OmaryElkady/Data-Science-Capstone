@@ -1,8 +1,9 @@
-# Data-Science-Capstone-Project:
-
-This is my senior year data science capstone project!
-
 # ✈️ Flightmasters: A Cloud-Based Flight Delay Prediction Platform
+
+[![Python Code Quality](https://github.com/OmaryElkady/Data-Science-Capstone/actions/workflows/python-code-quality.yml/badge.svg)](https://github.com/OmaryElkady/Data-Science-Capstone/actions/workflows/python-code-quality.yml)
+[![Notebook Checks](https://github.com/OmaryElkady/Data-Science-Capstone/actions/workflows/notebook-checks.yml/badge.svg)](https://github.com/OmaryElkady/Data-Science-Capstone/actions/workflows/notebook-checks.yml)
+
+> **Senior Year Data Science Capstone Project**
 
 ## 📘 Overview
 **Flightmasters** is a data science capstone project designed to predict flight delays and enhance the passenger experience through real-time data analytics.
@@ -13,7 +14,40 @@ The ultimate goal is to move beyond reactive delay notifications and provide **p
 
 ---
 
-## 🚀 Project Objectives
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Python 3.8 or higher
+- Git
+- pip (Python package installer)
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/OmaryElkady/Data-Science-Capstone.git
+cd Data-Science-Capstone
+
+# Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### Run Jupyter Notebooks
+
+```bash
+jupyter notebook
+```
+
+For detailed setup instructions, see [docs/SETUP.md](docs/SETUP.md).
+
+---
+
+## 🎯 Project Objectives
 
 1. **Predict Flight Delays**
    - Forecast the probability and duration of flight delays using historical and live data.
@@ -55,6 +89,7 @@ The ultimate goal is to move beyond reactive delay notifications and provide **p
 | **Visualization** | Databricks SQL Dashboards, Power BI / Tableau (optional) |
 
 ### ⚙️ Architecture Workflow
+
 ```plaintext
         +------------------+
         |   AviationStack  |
@@ -74,36 +109,86 @@ The ultimate goal is to move beyond reactive delay notifications and provide **p
                  |
         +--------v---------+
         | Visualization    |  --> Databricks SQL Dashboard
+        +------------------+
+```
 
 ---
 
-📊 Expected Deliverables
+## 📊 Expected Deliverables
 
-✅ Integrated Data Pipeline — Continuous ETL system merging flight and weather data
+- ✅ **Integrated Data Pipeline** — Continuous ETL system merging flight and weather data
+- ✅ **Predictive ML Models** — Classification and regression models with explainable insights
+- ✅ **Interactive Dashboard** — Real-time visualization of flight delay risk and recommendations
 
-✅ Predictive ML Models — Classification and regression models with explainable insights
+---
 
-✅ Interactive Dashboard — Real-time visualization of flight delay risk and recommendations
+## 👥 Team Members
 
+- **Omar Elkady**
+- **Aidan Maltby**
+- **Kshitij Mishra**
 
-👥 Team Members
+---
 
-Omar Elkady
-
-Aidan Maltby
-
-Kshitij Minshra
-
-
-📈 Impact
+## 📈 Impact
 
 By combining aviation and weather data with machine learning in the cloud, Flightmasters demonstrates how data-driven insights can revolutionize passenger experiences and airline operations.
 
 The platform offers a blueprint for:
 
-Reducing uncertainty and frustration for travelers
+- Reducing uncertainty and frustration for travelers
+- Helping airlines anticipate and manage delays efficiently
+- Promoting transparency and smarter decision-making in modern air travel
 
-Helping airlines anticipate and manage delays efficiently
+---
 
-Promoting transparency and smarter decision-making in modern air travel
-        +------------------+
+## 📁 Project Structure
+
+```
+Data-Science-Capstone/
+├── EDA_*.ipynb              # Exploratory Data Analysis notebooks
+├── *_table.ipynb            # Data processing notebooks (Bronze, Silver, Gold)
+├── ML FLow with pyspark.ipynb  # Machine Learning pipeline
+├── mlflow_experiments.py    # MLflow experiment tracking
+├── process_flight_data.py   # Data processing scripts
+├── requirements.txt         # Python dependencies
+├── Makefile                 # Development automation commands
+├── docs/                    # Documentation
+│   ├── SETUP.md            # Development environment setup
+│   └── CODE_QUALITY_GUIDE.md
+└── .github/workflows/       # CI/CD pipelines
+```
+
+---
+
+## 📚 Documentation
+
+- [**Contributing Guide**](CONTRIBUTING.md) — How to contribute to the project
+- [**Setup Guide**](docs/SETUP.md) — Development environment setup
+- [**MLflow Guide**](MLFLOW_GUIDE.md) — Machine learning experiment tracking
+- [**Data Analysis Report**](DATA_ANALYSIS_REPORT.md) — EDA findings and insights
+- [**Implementation Summary**](IMPLEMENTATION_SUMMARY.md) — Technical implementation details
+
+---
+
+## 🛠️ Development
+
+### Available Make Commands
+
+```bash
+make install       # Install project dependencies
+make install-dev   # Install development dependencies
+make format        # Format code with black and isort
+make lint          # Run linting checks
+make check         # Run all code quality checks
+make clean         # Clean up cache files
+make notebook      # Start Jupyter notebook server
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for more details.
+
+---
+
+## 📄 License
+
+This project is part of a senior year data science capstone course.
