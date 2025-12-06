@@ -1,7 +1,7 @@
 [flake8]
 max-line-length = 127
 extend-ignore = E203, W503, E501
-exclude = 
+exclude =
     .git,
     __pycache__,
     .ipynb_checkpoints,
@@ -12,3 +12,6 @@ exclude =
     dist,
     *.egg-info
 max-complexity = 10
+per-file-ignores =
+    # Allow Databricks-specific patterns in notebooks
+    *.ipynb:F821,F541,E722,E402,E712,F401,F402,F601,F841,E266
