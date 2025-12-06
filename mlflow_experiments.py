@@ -58,6 +58,7 @@ def load_flight_data_from_databricks():
     try:
         print("📊 Loading from Databricks tables...")
         from pyspark.sql import SparkSession
+
         spark = SparkSession.builder.appName("MLflowFlightDelay").getOrCreate()
         flights_df = spark.sql("SELECT * FROM workspace.google_drive.flights_processed")
         df = flights_df.toPandas()
@@ -76,7 +77,7 @@ def load_flight_data_from_databricks():
         if target_column in X.columns:
             X = X.drop(columns=[target_column])
         # Also drop other target-like columns to prevent data leakage
-        leaky_columns = ['is_delayed_30_min', 'is_delayed_any', 'arr_delay']
+        leaky_columns = ["is_delayed_30_min", "is_delayed_any", "arr_delay"]
         X = X.drop(columns=[col for col in leaky_columns if col in X.columns])
 
         # 4. Define our target data (y)
@@ -94,7 +95,7 @@ def load_flight_data_from_databricks():
         # Split data
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
         print(f"✅ Data prepared - Train: {X_train.shape}, Test: {X_test.shape}")
-        
+
         # Now the delay rate should be a valid probability (between 0 and 1)
         print(f"📊 Delay rate - Train: {y_train.mean():.3f}, Test: {y_test.mean():.3f}")
 
@@ -103,7 +104,8 @@ def load_flight_data_from_databricks():
     except Exception as e:
         print(f"⚠️  An error occurred: {e}")
         print("📊 Creating sample data for demonstration...")
-        return create_sample_data() # Fallback to sample data on error
+        return create_sample_data()  # Fallback to sample data on error
+
 
 def create_sample_data():
     """
