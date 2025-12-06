@@ -148,7 +148,7 @@ The platform offers a blueprint for:
 Data-Science-Capstone/
 ├── EDA_*.ipynb              # Exploratory Data Analysis notebooks
 ├── *_table.ipynb            # Data processing notebooks (Bronze, Silver, Gold)
-├── ML FLow with pyspark.ipynb  # Machine Learning pipeline
+├── "ML FLow with pyspark.ipynb" # Machine Learning pipeline with MLflow
 ├── mlflow_experiments.py    # MLflow experiment tracking
 ├── process_flight_data.py   # Data processing scripts
 ├── requirements.txt         # Python dependencies
