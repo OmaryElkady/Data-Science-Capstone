@@ -84,7 +84,7 @@ Omar Elkady
 
 Aidan Maltby
 
-Kshitij Minshra
+Kshitij Mishra
 
 
 📈 Impact
