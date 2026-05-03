@@ -41,6 +41,10 @@ wheels/
 *.egg
 MANIFEST
 
+# Environment / secrets
+.env
+.cache.sqlite
+
 # Virtual environments
 venv/
 env/
