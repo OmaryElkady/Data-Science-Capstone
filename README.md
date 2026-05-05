@@ -1,103 +1,49 @@
-# Data-Science-Capstone-Project:
+# ✈️ Flight Delay Prediction & Analytics Platform
 
-This is my senior year data science capstone project!
+End-to-end flight delay prediction system built on Databricks, using a medallion architecture to ingest, process, and model FAA flight data for real-time delay risk analytics.
 
-# ✈️ Flightmasters: A Cloud-Based Flight Delay Prediction Platform
+## Overview
 
-## 📘 Overview
-**Flightmasters** is a data science capstone project designed to predict flight delays and enhance the passenger experience through real-time data analytics.
+- Ingests live flight data from the AviationStack API
+- Processes data through Bronze/Silver/Gold medallion layers using Delta Lake
+- Trains classification and regression models using Spark MLlib and Scikit-learn
+- Tracks all experiments and model versions with MLflow
+- Visualizes delay risk and contributing factors in interactive Databricks dashboards
 
-By integrating open-source APIs — **AviationStack** — into a unified **Databricks** environment, Flightmasters enables end-to-end **data engineering**, **machine learning** to forecast disruptions *before* they happen.
+## Tech Stack
 
-The ultimate goal is to move beyond reactive delay notifications and provide **proactive flight disruption forecasting**, empowering passengers and airlines to make smarter, data-driven decisions.
+![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white)
+![Apache Spark](https://img.shields.io/badge/Apache%20Spark-E25A1C?style=flat&logo=apachespark&logoColor=white)
+![Databricks](https://img.shields.io/badge/Databricks-FF3621?style=flat&logo=databricks&logoColor=white)
+![Delta Lake](https://img.shields.io/badge/Delta%20Lake-003366?style=flat&logo=delta&logoColor=white)
+![MLflow](https://img.shields.io/badge/MLflow-0194E2?style=flat&logo=mlflow&logoColor=white)
+![Scikit-learn](https://img.shields.io/badge/Scikit--learn-F7931E?style=flat&logo=scikit-learn&logoColor=white)
+![Git](https://img.shields.io/badge/Git-F05032?style=flat&logo=git&logoColor=white)
 
----
+## Architecture
 
-## 🚀 Project Objectives
+Data flows through a three-layer medallion architecture:
 
-1. **Predict Flight Delays**
-   - Forecast the probability and duration of flight delays using historical and live data.
+- **Bronze:** raw API ingestion from AviationStack
+- **Silver:** cleaned, validated, and joined flight records
+- **Gold:** feature-engineered tables ready for modeling and dashboards
 
-2. **Integrate Real-Time Data Sources**
-   - **AviationStack API** – Flight schedules, routes, and historical delays
+## Models
 
-3. **Build a Scalable Cloud Pipeline**
-   - Develop an **ETL pipeline** in **Databricks** using **Apache Spark** and **Delta Lake** for continuous ingestion, cleaning, and transformation of live flight and weather data.
+- **Classification:** predicts whether a flight will be delayed (binary)
+- **Regression:** predicts delay duration in minutes
+- **Framework:** Spark MLlib and Scikit-learn
+- **Experiment tracking:** MLflow (model registry, run comparison, metrics logging)
 
-4. **Develop and Evaluate Predictive Models**
-   - Train machine learning models including **Random Forest**, and **Gradient Boosted Trees** using **Spark MLlib**
-   - Evaluate models using metrics such as **Accuracy** **Precision**, **Recall**, **F1** and **ROC AUC**
+## Notebooks
 
-5. **Deliver Actionable Insights via Dashboard**
-   - Create an interactive **Databricks SQL dashboard** that displays:
-     - Real-time delay risk scores (Low / Medium / High)
-     - Key contributing factors (weather, seasonal patterns, traffic trends)
-     - Suggested alternative flights or airports with lower disruption risk
+Exported notebook HTMLs are in the `docs/` folder and can be opened in any browser to view code and outputs without Databricks access.
 
----
+## Note on Running This Project
 
-## 🧠 Technical Architecture
+This project was built and runs on Databricks Runtime 14.x LTS. The medallion pipeline, dashboards, and MLflow tracking server are Databricks-native. To explore the code and outputs without a Databricks environment, see the exported notebooks in `docs/`.
 
-### 🗂️ Data Sources
-| Source | Description |
-|:--------|:-------------|
-| 🛫 **AviationStack** | Scheduled and historical flight data |
+## Contact
 
-### 🧰 Tech Stack
-| Layer | Tools & Technologies |
-|:------|:----------------------|
-| **Cloud Platform** | Databricks Community Edition |
-| **Data Processing** | Apache Spark, Delta Lake |
-| **Machine Learning** | Spark MLlib, MLflow |
-| **Storage** | Delta Tables, Databricks File System (DBFS) |
-| **Visualization** | Databricks SQL Dashboards, Power BI / Tableau (optional) |
-
-### ⚙️ Architecture Workflow
-```plaintext
-        +------------------+
-        |   AviationStack  |
-        +--------+---------+
-                 |
-        +--------v---------+
-        |  Databricks ETL  |  --> Cleans & merges data (Spark + Delta Lake)
-        +--------+---------+
-                 |
-        +--------v---------+
-        |   ML Training    |  --> Delay classification & regression (MLlib / Sklearn)
-        +--------+---------+
-                 |
-        +--------v---------+
-        | Visualization    |  --> Databricks SQL Dashboard
-
-📊 Expected Deliverables
-
-✅ Integrated Data Pipeline — Continuous ETL system merging flight and weather data
-
-✅ Predictive ML Models — Classification and regression models with explainable insights
-
-✅ Interactive Dashboard — Real-time visualization of flight delay risk and recommendations
-
-
-👥 Team Members
-
-Omar Elkady
-
-Aidan Maltby
-
-Kshitij Mishra
-
-
-📈 Impact
-
-By combining aviation data with machine learning in the cloud, Flightmasters demonstrates how data-driven insights can revolutionize passenger experiences and airline operations.
-
-The platform offers a blueprint for:
-
-Reducing uncertainty and frustration for travelers
-
-Helping airlines anticipate and manage delays efficiently
-
-Promoting transparency and smarter decision-making in modern air travel
-        +------------------+
-
-
+- GitHub: [OmaryElkady](https://github.com/OmaryElkady)
+- LinkedIn: [Omar Elkady](https://www.linkedin.com/in/omar-elkady-847b051ba/)
