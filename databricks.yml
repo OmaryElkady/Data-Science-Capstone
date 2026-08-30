@@ -1,0 +1,58 @@
+# Databricks Asset Bundle — Flight Delay Platform
+# Deploy with:  databricks bundle deploy -t dev
+# Run with:     databricks bundle run flight_delay_pipeline -t dev
+#
+# The bundle keeps orchestration in code, not clicks, so the Lakeflow Job is
+# reproducible across environments. Stays within the Free Edition quota of
+# 5 concurrent tasks by using sequential dependencies.
+
+bundle:
+  name: flight-delay-platform
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://community.cloud.databricks.com
+
+resources:
+  jobs:
+    flight_delay_pipeline:
+      name: flight-delay-daily
+      tasks:
+        - task_key: bronze
+          notebook_task:
+            notebook_path: ../notebooks/01_bronze
+        - task_key: silver
+          depends_on:
+            - task_key: bronze
+          notebook_task:
+            notebook_path: ../notebooks/03_silver
+        - task_key: gold
+          depends_on:
+            - task_key: silver
+          notebook_task:
+            notebook_path: ../notebooks/04_gold
+        - task_key: api_ingest
+          depends_on:
+            - task_key: gold
+          notebook_task:
+            notebook_path: ../notebooks/06_api_ingest
+            base_parameters:
+              USE_FIXTURE: "false"
+              DEP_IATA: "ATL"
+              ARR_IATA: "LAX"
+        - task_key: score
+          depends_on:
+            - task_key: api_ingest
+          notebook_task:
+            notebook_path: ../notebooks/07_score
+      schedule:
+        quartz_cron_expression: "0 0 6 * * ?"   # 06:00 UTC daily
+        timezone_id: UTC
+        pause_status: PAUSED
+      email_notifications:
+        on_failure:
+          - ${workspace.current_user.userName}
+      max_concurrent_runs: 1

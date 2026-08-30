@@ -17,6 +17,9 @@ results/
 *.png
 *.jpg
 *.jpeg
+# Allow evidence screenshots (README + runbook reference these)
+!docs/screenshots/*.png
+!docs/screenshots/*.jpg
 
 # Python
 __pycache__/
