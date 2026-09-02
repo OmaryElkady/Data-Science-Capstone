@@ -7,4 +7,5 @@ pytz>=2024.1
 requests>=2.31
 
 # dev / test
+matplotlib>=3.8   # src/plotting.py — ships with the Databricks runtime, pinned here for local dev
 pytest>=8.0
