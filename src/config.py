@@ -1,9 +1,11 @@
 """Single source of truth for catalog, schema, table, and volume names.
 
-Every notebook and script imports from this module so that the pipeline
-has exactly one place to change layout. Prevents the class of failure
-where Gold_table writes to `default.gold_ml_features` and training reads
-from `default.gold_ml_features_experimental`.
+Every notebook and script imports from this module so the pipeline has exactly
+one place to change layout. Prevents the class of failure where Gold writes to
+`gold_ml_features` and training reads `gold_ml_features_experimental`.
+
+Rule for this file: a constant lives here only if something imports it. An
+unused constant is a claim the code does not make.
 """
 
 from __future__ import annotations
@@ -32,8 +34,6 @@ ALTERNATIVES = f"{CATALOG}.{SCHEMA}.alternative_flight_recommendations"
 # Volumes
 RAW_VOLUME = f"/Volumes/{CATALOG}/{SCHEMA}/raw"
 ARTIFACT_VOLUME = f"/Volumes/{CATALOG}/{SCHEMA}/artifacts"
-
-# Source file (uploaded manually into RAW_VOLUME)
 SOURCE_CSV = f"{RAW_VOLUME}/flights_sample_3m.csv"
 
 # Unity Catalog registered model names (3-level)
@@ -41,22 +41,95 @@ MODEL_RF_PRE = f"{CATALOG}.{SCHEMA}.rf_pre_departure"
 MODEL_GBT_PRE = f"{CATALOG}.{SCHEMA}.gbt_pre_departure"
 MODEL_RF_IN = f"{CATALOG}.{SCHEMA}.rf_in_flight"
 MODEL_GBT_IN = f"{CATALOG}.{SCHEMA}.gbt_in_flight"
-
 CHAMPION_ALIAS = "champion"
 
 # MLflow
 MLFLOW_REGISTRY_URI = "databricks-uc"
-MLFLOW_EXPERIMENT = f"/Shared/flight-delay-platform"
+MLFLOW_EXPERIMENT = "/Shared/flight-delay-platform"
 
-# Modeling constants
-DELAY_THRESHOLD_MINUTES = 15  # FAA on-time definition
+# ---------------------------------------------------------------------------
+# Labelling
+# ---------------------------------------------------------------------------
+DELAY_THRESHOLD_MINUTES = 15   # US DOT / FAA on-time definition — see 02_eda §1
 RANDOM_SEED = 42
-TRAIN_FRACTION = 0.8
-CV_FOLDS = 2
-HYPEROPT_MAX_EVALS = 4  # bounded for Free Edition 100MB serverless cap
-TOP_K_FEATURES = 40
 
-# AviationStack
+# ---------------------------------------------------------------------------
+# Split protocol — see 02_eda §3 for the evidence
+# ---------------------------------------------------------------------------
+# Delay cascades within an operating day, so a random split leaks: the 07:00
+# departure that caused the delay lands in train while the 14:00 flight it
+# delayed lands in test. Outer split is a temporal holdout; the inner CV folds
+# are contiguous time blocks, not random rows.
+#
+# Three windows, not two. `CrossValidator.fit()` refits `bestModel` on its
+# entire input, so any fold of the CV window has been trained on by the time
+# the champion exists. Selecting the decision threshold on such a fold reports
+# an optimistically biased cut. THRESHOLD_YEAR is therefore carved out *before*
+# cross-validation and never enters CV.
+#
+# `03_silver` drops 2020 as a COVID anomaly, so the usable inventory is
+# 2019, 2021, 2022, 2023 — four years, not five. Holding 2022 out of CV costs a
+# third of the training window (12 quarters -> 8). That is the price of an
+# unbiased threshold, and it is worth paying: a threshold picked in-sample makes
+# every precision/recall number downstream unfalsifiable.
+TRAIN_END_YEAR = 2021         # CV window: 2019 + 2021 = 8 quarters
+THRESHOLD_YEAR = 2022         # held out of CV; used only to pick the threshold
+TEST_YEAR = 2023              # touched exactly once, in Stage 3
+
+# 4, not 5: the CV window is 8 quarters, so 4 folds divide it evenly into 2-quarter
+# blocks. 5 folds would produce uneven folds (2,2,1,2,1 quarters), which inflates
+# the fold-to-fold standard deviation that Stage 2a uses to call ties.
+CV_FOLDS = 4                   # passed to CrossValidator via foldCol
+SEARCH_CV_FOLDS = 3            # cheaper folds during the broad search stage
+SEARCH_SAMPLE_FRACTION = 0.25  # stage-1 search runs on a sample; winner refits on all
+
+# ---------------------------------------------------------------------------
+# Feature selection — K is chosen by the sweep in 05_train, not assumed
+# ---------------------------------------------------------------------------
+# UnivariateFeatureSelector (ANOVA F-test) is fitted INSIDE each CV fold as a
+# Pipeline stage. Selecting on the full dataset before splitting would let the
+# selector see validation rows and inflate every score that follows.
+TOP_K_CANDIDATES = [10, 20, 40, 80, 0]   # 0 = keep all features (the control)
+# There is deliberately no TOP_K_FEATURES here. It was a magic 40 that nothing
+# derived and the README should not claim (REVIEW_FINDINGS I1). K is now the
+# output of the Stage 1 sweep, held in the notebook as SELECTED_K.
+
+# ---------------------------------------------------------------------------
+# Hyperparameter search
+# ---------------------------------------------------------------------------
+# Stage 1: Hyperopt TPE explores broadly, scored by K-fold CV on a sample.
+# Stage 2: the top configurations are re-scored by CrossValidator on the full
+#          training window, so the winner is confirmed on all the data.
+# TPE needs roughly 20 startup trials before its surrogate beats random search,
+# so anything below ~20 evals is random search wearing a Bayesian label.
+HYPEROPT_MAX_EVALS = 25
+STAGE2_TOP_N = 3
+
+# Bounded to respect the serverless SparkML limits: a single model must stay
+# under 100 MB and a session under 1 GB, and tree training halts early if a
+# model is about to exceed the cap.
+RF_MAX_TREES = 60
+RF_MAX_DEPTH = 10
+GBT_MAX_ITER = 40
+GBT_MAX_DEPTH = 7
+
+# ---------------------------------------------------------------------------
+# Evaluation
+# ---------------------------------------------------------------------------
+# ROC-AUC tunes (threshold-independent, measures ranking). F-beta reports
+# (threshold-dependent, measures decisions). beta=1 because the cost ratio of a
+# missed delay to a false alarm is a product decision that has not been made;
+# raise it when it is. See 02_eda §2.
+TUNING_METRIC = "areaUnderROC"
+REPORTING_BETA = 1.0
+THRESHOLD_GRID = [round(0.05 * i, 2) for i in range(1, 20)]  # 0.05 .. 0.95
+
+# ---------------------------------------------------------------------------
+# AviationStack (live scoring path)
+# ---------------------------------------------------------------------------
+# Kept from the pre-bundle config: `src/api_pipeline.py` and `06_api_ingest`
+# import these. The bundle's config omitted them; dropping them breaks both at
+# import time rather than at use.
 AVIATIONSTACK_BASE_URL = "https://api.aviationstack.com/v1/"
 AVIATIONSTACK_SECRET_SCOPE = "flights"
 AVIATIONSTACK_SECRET_KEY = "aviationstack_key"
