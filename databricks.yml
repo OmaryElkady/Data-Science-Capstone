@@ -13,8 +13,9 @@ targets:
   dev:
     mode: development
     default: true
-    workspace:
-      host: https://community.cloud.databricks.com
+    # No `host` here on purpose: it resolves from the CLI profile
+    # (DATABRICKS_HOST / ~/.databrickscfg). Hardcoding a workspace URL in a
+    # public repo both leaks the workspace and pins the bundle to one account.
 
 resources:
   jobs:
