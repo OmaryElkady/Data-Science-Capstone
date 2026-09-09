@@ -7,7 +7,7 @@ implemented here.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 import holidays
@@ -52,6 +52,55 @@ def check_holiday_period(d: date) -> int:
         if (d + pd.Timedelta(days=offset)) in _US_HOLIDAYS:
             return 1
     return 0
+
+
+def spark_day_of_week(d: date) -> int:
+    """Day of week in Spark's `dayofweek` convention: 1=Sunday .. 7=Saturday.
+
+    Python's `date.weekday()` is 0=Monday. Encoding the conversion here, once,
+    is what lets the date dimension below replace Spark's own `dayofweek`
+    without silently shifting the feature by a day.
+    """
+    return (d.weekday() + 1) % 7 + 1
+
+
+def build_date_dimension(start: date, end: date) -> list[dict]:
+    """One row per calendar date, with every derived temporal flag precomputed.
+
+    Replaces four Python UDFs evaluated once per flight row. The dataset has
+    roughly two million rows spanning about two thousand distinct dates, so the
+    holiday lookups run ~1000x fewer times, and the join that applies them runs
+    entirely in the JVM instead of serialising each row to a Python worker.
+
+    Returned columns match the Spark builtins they replace exactly:
+    `dayofweek` (1=Sunday), `weekofyear` (ISO), `quarter`, `month`.
+    """
+    if end < start:
+        raise ValueError(f"end {end} precedes start {start}")
+
+    rows, day = [], start
+    while day <= end:
+        dow = spark_day_of_week(day)
+        rows.append(
+            {
+                "flight_date": day,
+                "flight_month": day.month,
+                "day_of_week": dow,
+                "week_of_year": day.isocalendar()[1],
+                "day_of_month": day.day,
+                "quarter": (day.month - 1) // 3 + 1,
+                "is_weekend": int(dow in (1, 7)),
+                "is_holiday": check_holiday(day),
+                "is_near_holiday": check_near_holiday(day),
+                "is_holiday_period": check_holiday_period(day),
+                "season": get_season(day.month),
+            }
+        )
+        day += timedelta(days=1)   # datetime.timedelta, not pd.Timedelta:
+        #                            adding a pandas offset promotes `date` to
+        #                            `Timestamp` and would write a Spark
+        #                            timestamp column where a date is expected.
+    return rows
 
 
 def convert_utc_to_hhmm(ts) -> Optional[int]:
