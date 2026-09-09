@@ -18,7 +18,75 @@ from src.features import (
     fix_timestamp_smart,
     get_season,
     hhmm_to_hour,
+    build_date_dimension,
+    spark_day_of_week,
 )
+
+
+class TestSparkDayOfWeek:
+    """Spark's dayofweek is 1=Sunday..7=Saturday; Python's weekday() is 0=Monday.
+
+    Getting this wrong shifts every day-of-week feature by one and is invisible
+    in aggregate statistics, so it is pinned against known dates.
+    """
+
+    @pytest.mark.parametrize("d,expected", [
+        (date(2023, 1, 1), 1),   # Sunday
+        (date(2023, 1, 2), 2),   # Monday
+        (date(2023, 1, 6), 6),   # Friday
+        (date(2023, 1, 7), 7),   # Saturday
+    ])
+    def test_matches_spark_convention(self, d, expected):
+        assert spark_day_of_week(d) == expected
+
+
+class TestBuildDateDimension:
+    """The date dimension replaces four per-row Python UDFs with a broadcast join.
+
+    The refactor is only safe if the dimension reproduces the helpers exactly,
+    so equivalence is asserted rather than assumed.
+    """
+
+    def test_covers_every_day_inclusive(self):
+        rows = build_date_dimension(date(2023, 1, 1), date(2023, 1, 31))
+        assert len(rows) == 31
+        assert rows[0]["flight_date"] == date(2023, 1, 1)
+        assert rows[-1]["flight_date"] == date(2023, 1, 31)
+
+    def test_flight_date_stays_a_date(self):
+        # A pandas offset would promote this to Timestamp and write the wrong
+        # Spark column type.
+        for row in build_date_dimension(date(2023, 1, 1), date(2023, 1, 5)):
+            assert type(row["flight_date"]) is date
+
+    def test_agrees_with_the_udf_helpers_it_replaces(self):
+        for row in build_date_dimension(date(2019, 1, 1), date(2019, 12, 31)):
+            d = row["flight_date"]
+            assert row["is_holiday"] == check_holiday(d)
+            assert row["is_near_holiday"] == check_near_holiday(d)
+            assert row["is_holiday_period"] == check_holiday_period(d)
+            assert row["season"] == get_season(d.month)
+
+    def test_calendar_fields_match_builtins(self):
+        for row in build_date_dimension(date(2021, 1, 1), date(2021, 12, 31)):
+            d = row["flight_date"]
+            assert row["flight_month"] == d.month
+            assert row["day_of_month"] == d.day
+            assert row["week_of_year"] == d.isocalendar()[1]
+            assert row["quarter"] == (d.month - 1) // 3 + 1
+            assert row["is_weekend"] == int(spark_day_of_week(d) in (1, 7))
+
+    def test_known_holiday_flags(self):
+        rows = {r["flight_date"]: r for r in
+                build_date_dimension(date(2023, 7, 1), date(2023, 7, 10))}
+        assert rows[date(2023, 7, 4)]["is_holiday"] == 1
+        assert rows[date(2023, 7, 3)]["is_holiday"] == 0
+        assert rows[date(2023, 7, 3)]["is_near_holiday"] == 1
+        assert rows[date(2023, 7, 10)]["is_holiday_period"] == 1
+
+    def test_rejects_reversed_range(self):
+        with pytest.raises(ValueError):
+            build_date_dimension(date(2023, 12, 31), date(2023, 1, 1))
 
 
 class TestGetSeason:
