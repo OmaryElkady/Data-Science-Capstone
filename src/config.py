@@ -89,7 +89,11 @@ SEARCH_SAMPLE_FRACTION = 0.25  # stage-1 search runs on a sample; winner refits 
 # UnivariateFeatureSelector (ANOVA F-test) is fitted INSIDE each CV fold as a
 # Pipeline stage. Selecting on the full dataset before splitting would let the
 # selector see validation rows and inflate every score that follows.
-TOP_K_CANDIDATES = [10, 20, 40, 80, 0]   # 0 = keep all features (the control)
+# K=5 added after the first full run, where every one of [10, 20, 40, 80, all]
+# landed inside one standard deviation of the best. A sweep where nothing is
+# distinguishable has not found the point where feature count starts to matter,
+# it has only shown that the point is below the smallest value tried.
+TOP_K_CANDIDATES = [5, 10, 20, 40, 80, 0]   # 0 = keep all features (the control)
 # There is deliberately no TOP_K_FEATURES here. It was a magic 40 that nothing
 # derived and the README should not claim (REVIEW_FINDINGS I1). K is now the
 # output of the Stage 1 sweep, held in the notebook as SELECTED_K.
@@ -122,7 +126,19 @@ GBT_MAX_DEPTH = 7
 # raise it when it is. See 02_eda §2.
 TUNING_METRIC = "areaUnderROC"
 REPORTING_BETA = 1.0
-THRESHOLD_GRID = [round(0.05 * i, 2) for i in range(1, 20)]  # 0.05 .. 0.95
+
+# Resolution matched to where the optimum actually lives. The positive rate is
+# ~20%, and the first full run put the pre-departure cut at 0.15, so a uniform
+# 0.05 grid was stepping by a third of the answer's own magnitude and could not
+# distinguish 0.13 from 0.17. Fine below 0.60, coarse above it where nothing
+# competes. 0.50 stays on the grid so the "cost of the default" line still has
+# an exact point to compare against.
+# `evaluation.confusion_at` evaluates every threshold in a single pass, so the
+# extra resolution costs columns in one aggregation rather than extra scans.
+THRESHOLD_GRID = (
+    [round(0.01 * i, 2) for i in range(2, 61)]      # 0.02 .. 0.60 at 0.01
+    + [round(0.05 * i, 2) for i in range(13, 20)]   # 0.65 .. 0.95 at 0.05
+)
 
 # ---------------------------------------------------------------------------
 # AviationStack (live scoring path)
