@@ -127,6 +127,99 @@ class TestMatchToSchedule:
         assert report["with_callsign"] + report["without_callsign"] == len(rows)
 
 
+class FakeClock:
+    """Controllable monotonic clock so expiry can be tested without waiting."""
+
+    def __init__(self):
+        self.t = 1000.0
+
+    def __call__(self):
+        return self.t
+
+    def advance(self, seconds):
+        self.t += seconds
+
+
+class CountingTokenFn:
+    def __init__(self, expires_in=1800):
+        self.calls = 0
+        self.expires_in = expires_in
+
+    def __call__(self, client_id, client_secret):
+        self.calls += 1
+        return f"token-{self.calls}", self.expires_in
+
+
+class TestOpenSkyClient:
+    """The credentials are long-lived; only the minted token expires."""
+
+    def _client(self, **kw):
+        from src.opensky import OpenSkyClient
+        clock = kw.pop("clock", FakeClock())
+        fn = kw.pop("token_fn", CountingTokenFn())
+        return OpenSkyClient("id", "secret", token_fn=fn, clock=clock, **kw), fn, clock
+
+    def test_requires_both_credentials(self):
+        from src.opensky import OpenSkyClient
+        with pytest.raises(ValueError):
+            OpenSkyClient("", "secret")
+        with pytest.raises(ValueError):
+            OpenSkyClient("id", "")
+
+    def test_mints_once_and_reuses(self):
+        client, fn, _ = self._client()
+        assert client.token() == "token-1"
+        for _ in range(5):
+            assert client.token() == "token-1"
+        assert fn.calls == 1, "a valid token must not be re-fetched"
+
+    def test_refreshes_after_expiry(self):
+        client, fn, clock = self._client()
+        assert client.token() == "token-1"
+        clock.advance(1801)
+        assert client.token() == "token-2"
+        assert fn.calls == 2
+
+    def test_refreshes_inside_the_safety_margin(self):
+        # Valid for another 60s, but the margin is 120s: refresh rather than risk
+        # the token dying mid-request.
+        client, fn, clock = self._client(refresh_margin_seconds=120)
+        client.token()
+        clock.advance(1800 - 60)
+        assert client.expired
+        assert client.token() == "token-2"
+
+    def test_does_not_refresh_outside_the_margin(self):
+        client, fn, clock = self._client(refresh_margin_seconds=120)
+        client.token()
+        clock.advance(1800 - 300)
+        assert not client.expired
+        assert client.token() == "token-1"
+        assert fn.calls == 1
+
+    def test_invalidate_forces_reauth(self):
+        client, fn, _ = self._client()
+        client.token()
+        client.invalidate()
+        assert client.token() == "token-2"
+        assert fn.calls == 2
+
+    def test_short_lived_token_refreshes_sooner(self):
+        client, fn, clock = self._client(
+            token_fn=CountingTokenFn(expires_in=300), refresh_margin_seconds=30
+        )
+        client.token()
+        clock.advance(280)
+        assert client.token() == "token-2"
+
+    def test_refresh_count_is_observable(self):
+        client, fn, clock = self._client()
+        for _ in range(3):
+            client.token()
+            clock.advance(1801)
+        assert client.refresh_count == 3
+
+
 def test_conus_bbox_is_well_formed():
     assert CONUS_BBOX["lamin"] < CONUS_BBOX["lamax"]
     assert CONUS_BBOX["lomin"] < CONUS_BBOX["lomax"]
