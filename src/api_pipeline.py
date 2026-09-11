@@ -104,6 +104,11 @@ def project_to_silver(payload: dict[str, Any]) -> pd.DataFrame:
             "airline_name": airline.get("name"),
             "airline_code": airline.get("iata"),
             "fl_number": _safe_int(flight.get("number")),
+            # ICAO flight designator, e.g. "DAL1234". This is the join key to
+            # OpenSky, which broadcasts `callsign` in the same form. Keeping it
+            # here means no IATA-to-ICAO mapping table is needed anywhere:
+            # AviationStack already supplies the ICAO spelling.
+            "flight_icao": (flight.get("icao") or "").strip().upper() or None,
             "origin_airport_code": dep.get("iata"),
             "destination_airport_code": arr.get("iata"),
             "flight_date": flight_date,
