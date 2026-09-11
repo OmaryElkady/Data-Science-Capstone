@@ -39,7 +39,8 @@ needed, because AviationStack supplies the ICAO form itself.
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Optional
+import time
+from typing import Any, Callable, Iterable, Optional
 
 import requests
 
@@ -112,6 +113,100 @@ def fetch_states(
     )
     resp.raise_for_status()
     return resp.json()
+
+
+class OpenSkyClient:
+    """Holds credentials, hands out a valid bearer token, fetches state.
+
+    What actually expires
+    ---------------------
+    The `clientId` / `clientSecret` pair is long-lived: store it in Databricks
+    secrets once and leave it. The *access token* minted from it lasts 1,800
+    seconds. Nothing about that requires re-saving a secret — the token is
+    derived at runtime and never persisted.
+
+    So why a manager? Because a token fetched at the top of a notebook is dead
+    thirty minutes later, and a scoring job that outlives that window would fail
+    partway with a 401 having already done most of its work. This refreshes on
+    demand: every call checks the clock first, and a 401 mid-flight forces one
+    re-auth and retry in case the token was revoked early.
+
+    `token_fn` and `clock` are injectable so the expiry logic can be tested
+    without network access or real waiting.
+    """
+
+    def __init__(
+        self,
+        client_id: str,
+        client_secret: str,
+        refresh_margin_seconds: int = 120,
+        token_fn: Optional[Callable[[str, str], tuple[str, int]]] = None,
+        clock: Callable[[], float] = time.monotonic,
+    ):
+        if not client_id or not client_secret:
+            raise ValueError("OpenSky client_id and client_secret are both required")
+        self._client_id = client_id
+        self._client_secret = client_secret
+        # Refresh early. A token that is valid when checked but expires during
+        # the request is the failure this margin exists to prevent.
+        self._margin = refresh_margin_seconds
+        self._token_fn = token_fn or _fetch_token_with_expiry
+        self._clock = clock
+        self._token: Optional[str] = None
+        self._expires_at: float = 0.0
+        self.refresh_count = 0
+
+    @property
+    def expired(self) -> bool:
+        return self._token is None or self._clock() >= self._expires_at - self._margin
+
+    def token(self) -> str:
+        """A bearer token that is valid now, minting a new one if it is not."""
+        if self.expired:
+            token, expires_in = self._token_fn(self._client_id, self._client_secret)
+            self._token = token
+            self._expires_at = self._clock() + float(expires_in)
+            self.refresh_count += 1
+        return self._token
+
+    def invalidate(self) -> None:
+        """Drop the cached token so the next call re-authenticates."""
+        self._token = None
+        self._expires_at = 0.0
+
+    def fetch_states(self, bbox: Optional[dict] = None, timeout: int = 60) -> dict[str, Any]:
+        """One call, the whole tracked airspace, with one re-auth retry on 401."""
+        try:
+            return fetch_states(self.token(), bbox, timeout)
+        except requests.HTTPError as exc:
+            if exc.response is None or exc.response.status_code != 401:
+                raise
+            # Valid by the clock but rejected: revoked, or the server's notion of
+            # expiry differs from ours. Re-auth once, then let it fail for real.
+            self.invalidate()
+            return fetch_states(self.token(), bbox, timeout)
+
+
+def _fetch_token_with_expiry(client_id: str, client_secret: str) -> tuple[str, int]:
+    """(token, expires_in_seconds) from the OAuth2 token endpoint."""
+    resp = requests.post(
+        TOKEN_URL,
+        data={
+            "grant_type": "client_credentials",
+            "client_id": client_id,
+            "client_secret": client_secret,
+        },
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        timeout=20,
+    )
+    resp.raise_for_status()
+    body = resp.json()
+    token = body.get("access_token")
+    if not token:
+        raise ValueError("OpenSky token response carried no access_token")
+    # Default low rather than high: assuming a long life and being wrong means
+    # failing mid-job, assuming a short one just means refreshing sooner.
+    return token, int(body.get("expires_in", 1800))
 
 
 def normalise_callsign(raw: Optional[str]) -> Optional[str]:
