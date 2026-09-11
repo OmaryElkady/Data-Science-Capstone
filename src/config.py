@@ -149,3 +149,18 @@ THRESHOLD_GRID = (
 AVIATIONSTACK_BASE_URL = "https://api.aviationstack.com/v1/"
 AVIATIONSTACK_SECRET_SCOPE = "flights"
 AVIATIONSTACK_SECRET_KEY = "aviationstack_key"
+
+# ---------------------------------------------------------------------------
+# OpenSky Network (live aircraft state)
+# ---------------------------------------------------------------------------
+# Supplies the ground/air phase split in bulk: one /states/all call returned
+# 8,166 aircraft over the continental US, of which 2,893 carried callsigns
+# belonging to carriers present in the BTS data. Credentials are OAuth2 client
+# credentials and live in the same secret scope as the AviationStack key —
+# never in this file, which is public. See docs/API_STRATEGY.md.
+OPENSKY_SECRET_SCOPE = "flights"
+OPENSKY_CLIENT_ID_KEY = "opensky_client_id"
+OPENSKY_CLIENT_SECRET_KEY = "opensky_client_secret"
+
+# Raw snapshot landing table for the live state feed.
+OPENSKY_STATES = f"{CATALOG}.{SCHEMA}.opensky_states"

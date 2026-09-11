@@ -1,7 +1,33 @@
 # Live data strategy: matching the source to the flight phase
 
-Design note for the scoring path. Nothing here is implemented yet — it is the argument for
-what to build next and, as importantly, what not to.
+Implemented in `src/opensky.py`, `06_api_ingest` and `07_score`. Every number below was
+measured against the live API rather than estimated.
+
+## Measured, not assumed
+
+A single `/states/all` call over the continental US bounding box, 2026-09-11:
+
+| | |
+|---|---|
+| Aircraft returned in one call | **8,166** |
+| Response size | 1.1 MB |
+| On ground (`on_ground = true`) | 725 |
+| Airborne | 7,441 |
+| Carrying a callsign | 8,058 (98.7%) |
+| Commercial ICAO callsigns | 4,451 (54.5%) |
+| N-registered general aviation | 3,214 (39.4%) |
+| **Callsigns mapping to a US carrier in BTS** | **2,893** — 2,483 airborne, 411 on ground |
+
+The last row is the one that matters: one call yields ~2,900 scoreable aircraft. The
+AviationStack equivalent is one call per route.
+
+The token endpoint uses OAuth2 client credentials and returns a bearer valid for 1,800
+seconds, so a scheduled job fetches one per run rather than caching across runs.
+
+**The join was verified end to end.** AviationStack's `flight.icao` is `"DAL1234"`; OpenSky
+broadcasts `"AAL1276 "`, `"DAL943 "`, `"UAL2149 "` — the same ICAO form, space-padded. After
+stripping they compare directly. No IATA-to-ICAO mapping table is needed anywhere, because
+AviationStack supplies the ICAO spelling itself.
 
 ## The problem with the current shape
 
