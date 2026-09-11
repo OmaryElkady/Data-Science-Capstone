@@ -1,10 +1,30 @@
 # Databricks Asset Bundle — Flight Delay Platform
-# Deploy with:  databricks bundle deploy -t dev
-# Run with:     databricks bundle run flight_delay_pipeline -t dev
 #
-# The bundle keeps orchestration in code, not clicks, so the Lakeflow Job is
-# reproducible across environments. Stays within the Free Edition quota of
-# 5 concurrent tasks by using sequential dependencies.
+#   databricks bundle validate -t dev
+#   databricks bundle deploy   -t dev
+#   databricks bundle run flight_delay_training -t dev
+#   databricks bundle run flight_delay_scoring  -t dev
+#
+# Orchestration lives in code rather than in clicks, so the jobs are reproducible
+# and reviewable. Free Edition allows 5 concurrent tasks; every dependency here is
+# sequential, so a run never needs more than one.
+#
+# Two jobs, not one. Training and scoring have different cadences and different
+# costs, and collapsing them into a single pipeline means either retraining every
+# time you want a prediction or scoring only when you retrain. Neither is right.
+#
+#   flight_delay_training   manual. Rebuilds Bronze -> Silver -> Gold and retrains
+#                           both champions. Expensive: a full 05_train run does a
+#                           25-trial TPE search plus blocked CV on ~1.3M rows.
+#                           Triggered deliberately, never on a schedule.
+#
+#   flight_delay_scoring    daily. Ingests live flights and scores them against
+#                           whatever currently carries the @champion alias. Cheap.
+#                           Shipped PAUSED — see the note on the schedule below.
+#
+# 02_eda is deliberately absent from both. It reads Silver and Bronze and writes
+# nothing; it is analysis for the reader, not a pipeline stage. Running it on a
+# schedule would burn quota to regenerate charts nobody asked for.
 
 bundle:
   name: flight-delay-platform
@@ -19,41 +39,102 @@ targets:
 
 resources:
   jobs:
-    flight_delay_pipeline:
-      name: flight-delay-daily
+
+    # ---------------------------------------------------------------------
+    # Training — manual trigger
+    # ---------------------------------------------------------------------
+    flight_delay_training:
+      name: flight-delay-training
+      max_concurrent_runs: 1
+
+      # Serverless environment. Environment version 4 is required for
+      # `pyspark.ml` and `mlflow.spark`; on an older version 05_train fails at
+      # import. Declaring dependencies here rather than leaving `%pip install`
+      # in the notebooks means the environment is built once per run instead of
+      # per notebook, and the versions are recorded in code.
+      environments:
+        - environment_key: serverless_v4
+          spec:
+            environment_version: "4"
+            dependencies:
+              - holidays>=0.50
+              - hyperopt
+
       tasks:
         - task_key: bronze
+          environment_key: serverless_v4
           notebook_task:
-            notebook_path: ../notebooks/01_bronze
+            notebook_path: ./notebooks/01_bronze.ipynb
+
         - task_key: silver
-          depends_on:
-            - task_key: bronze
+          depends_on: [{ task_key: bronze }]
+          environment_key: serverless_v4
           notebook_task:
-            notebook_path: ../notebooks/03_silver
+            notebook_path: ./notebooks/03_silver.ipynb
+
         - task_key: gold
-          depends_on:
-            - task_key: silver
+          depends_on: [{ task_key: silver }]
+          environment_key: serverless_v4
           notebook_task:
-            notebook_path: ../notebooks/04_gold
-        - task_key: api_ingest
-          depends_on:
-            - task_key: gold
-          notebook_task:
-            notebook_path: ../notebooks/06_api_ingest
+            notebook_path: ./notebooks/04_gold.ipynb
             base_parameters:
-              USE_FIXTURE: "false"
-              DEP_IATA: "ATL"
-              ARR_IATA: "LAX"
-        - task_key: score
-          depends_on:
-            - task_key: api_ingest
+              # auto: load the saved feature pipeline if present, else fit and
+              # save. `always` after a Silver schema change.
+              refit_pipeline: "auto"
+
+        - task_key: train
+          depends_on: [{ task_key: gold }]
+          environment_key: serverless_v4
           notebook_task:
-            notebook_path: ../notebooks/07_score
-      schedule:
-        quartz_cron_expression: "0 0 6 * * ?"   # 06:00 UTC daily
-        timezone_id: UTC
-        pause_status: PAUSED
+            notebook_path: ./notebooks/05_train.ipynb
+            base_parameters:
+              # true cuts folds, evals and sample size — minutes rather than
+              # hours. Use it to prove the path works before paying for a real run.
+              fast_mode: "false"
+
       email_notifications:
         on_failure:
           - ${workspace.current_user.userName}
+
+    # ---------------------------------------------------------------------
+    # Scoring — scheduled, shipped paused
+    # ---------------------------------------------------------------------
+    flight_delay_scoring:
+      name: flight-delay-scoring
       max_concurrent_runs: 1
+
+      environments:
+        - environment_key: serverless_v4
+          spec:
+            environment_version: "4"
+            dependencies:
+              - holidays>=0.50
+
+      tasks:
+        - task_key: api_ingest
+          environment_key: serverless_v4
+          notebook_task:
+            notebook_path: ./notebooks/06_api_ingest.ipynb
+            base_parameters:
+              USE_FIXTURE: "false"
+              USE_OPENSKY: "true"
+              DEP_IATA: "ATL"
+              ARR_IATA: "LAX"
+
+        - task_key: score
+          depends_on: [{ task_key: api_ingest }]
+          environment_key: serverless_v4
+          notebook_task:
+            notebook_path: ./notebooks/07_score.ipynb
+
+      schedule:
+        quartz_cron_expression: "0 0 6 * * ?"   # 06:00 UTC daily
+        timezone_id: UTC
+        # PAUSED on purpose. This is a portfolio repo on a metered free tier: a
+        # live schedule would quietly consume the compute quota every morning
+        # whether or not anyone is looking. Unpause to demonstrate, then pause again.
+        pause_status: PAUSED
+
+      email_notifications:
+        on_failure:
+          - ${workspace.current_user.userName}
