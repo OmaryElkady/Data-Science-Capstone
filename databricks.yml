@@ -119,7 +119,12 @@ resources:
               USE_FIXTURE: "false"
               USE_OPENSKY: "true"
               DEP_IATA: "ATL"
-              ARR_IATA: "LAX"
+              # Empty on purpose. Setting both origin and destination pins the
+              # query to one route; ATL-LAX is a dozen flights a day and the live
+              # snapshot regularly holds none of them, which returns zero rows.
+              # Origin alone returns the airport's departures — more data, and the
+              # airport-day grain the congestion features need.
+              ARR_IATA: ""
 
         - task_key: score
           depends_on: [{ task_key: api_ingest }]
