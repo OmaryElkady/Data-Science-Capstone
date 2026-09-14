@@ -253,6 +253,32 @@ def split_by_phase(rows: Iterable[dict]) -> tuple[list[dict], list[dict]]:
     return ground, airborne
 
 
+def match_by_airframe(
+    rows: Iterable[dict], icao24_addresses: Iterable[str]
+) -> tuple[list[dict], dict[str, Any]]:
+    """Match on the ICAO 24-bit airframe address — the strongest join available.
+
+    AeroDataBox returns `aircraft.modeS` for a scheduled flight, and that is the
+    same identifier OpenSky broadcasts as `icao24`. Matching on it identifies a
+    specific aeroplane rather than a flight number, which sidesteps two problems
+    at once: codeshares share a number but not an airframe, and a number is
+    reused daily while an address is not.
+
+    Callsign matching remains useful as a fallback when the provider has no
+    aircraft assigned yet — typically a flight far enough ahead that no tail has
+    been allocated.
+    """
+    wanted = {a.strip().lower() for a in icao24_addresses if a}
+    rows = list(rows)
+    matched = [r for r in rows if (r.get("icao24") or "").strip().lower() in wanted]
+    return matched, {
+        "states_seen": len(rows),
+        "airframes_wanted": len(wanted),
+        "matched": len(matched),
+        "match_rate": len(matched) / len(wanted) if wanted else 0.0,
+    }
+
+
 def match_to_schedule(
     rows: Iterable[dict], scheduled_icao: Iterable[str]
 ) -> tuple[list[dict], dict[str, int]]:
