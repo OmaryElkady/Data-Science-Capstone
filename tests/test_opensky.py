@@ -226,3 +226,77 @@ def test_conus_bbox_is_well_formed():
     # Longitudes are western-hemisphere negative; a sign slip here silently
     # returns an empty airspace rather than an error.
     assert CONUS_BBOX["lomin"] < 0 and CONUS_BBOX["lomax"] < 0
+
+class TestDeriveSchedule:
+    """OpenSky publishes no timetable, so one is derived from observed departures.
+
+    The fixture is a recorded slice of real KATL departures.
+    """
+
+    @pytest.fixture(scope="class")
+    def departures(self):
+        import json
+        path = Path(__file__).parent / "fixtures" / "opensky_departures.json"
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def _records(self, callsign, times):
+        """Departure records for one callsign at given UTC times (hh, mm)."""
+        import calendar
+        out = []
+        for day, (hh, mm) in enumerate(times, start=1):
+            ts = calendar.timegm((2026, 9, day, hh, mm, 0, 0, 0, 0))
+            out.append({"callsign": f"{callsign} ", "firstSeen": ts,
+                        "estDepartureAirport": "KATL"})
+        return out
+
+    def test_median_not_mean(self):
+        from src.opensky import derive_schedule
+        # Four departures near 10:00 and one three hours late. A mean would put
+        # the schedule at a time the flight has never actually left.
+        recs = self._records("DAL1", [(10, 0), (10, 5), (10, 10), (10, 15), (13, 0)])
+        sched = derive_schedule(recs)["DAL1"]
+        assert sched["median_minute"] == 10 * 60 + 10
+        assert sched["median_hhmm"] == 1010
+
+    def test_spread_is_reported(self):
+        from src.opensky import derive_schedule
+        recs = self._records("DAL2", [(10, 0), (10, 30), (11, 0)])
+        assert derive_schedule(recs)["DAL2"]["spread_minutes"] == 60
+
+    def test_spread_separates_reliable_from_erratic(self):
+        from src.opensky import derive_schedule
+        steady = self._records("DAL3", [(8, 0), (8, 5), (8, 10)])
+        erratic = self._records("DAL4", [(8, 0), (9, 30), (10, 45)])
+        sched = derive_schedule(steady + erratic)
+        assert sched["DAL3"]["spread_minutes"] < sched["DAL4"]["spread_minutes"]
+
+    def test_respects_the_observation_floor(self):
+        from src.opensky import derive_schedule
+        recs = self._records("DAL5", [(9, 0), (9, 10)])
+        assert "DAL5" not in derive_schedule(recs, min_observations=3)
+        assert "DAL5" in derive_schedule(recs, min_observations=2)
+
+    def test_ignores_records_with_no_callsign_or_time(self):
+        from src.opensky import derive_schedule
+        recs = self._records("DAL6", [(9, 0), (9, 5), (9, 10)])
+        recs += [{"callsign": "   ", "firstSeen": 1}, {"callsign": "DAL6"}]
+        sched = derive_schedule(recs)
+        assert sched["DAL6"]["observations"] == 3
+
+    def test_callsigns_are_normalised(self):
+        from src.opensky import derive_schedule
+        recs = self._records("dal7", [(9, 0), (9, 5), (9, 10)])
+        assert "DAL7" in derive_schedule(recs)
+
+    def test_runs_on_the_recorded_fixture(self, departures):
+        from src.opensky import derive_schedule
+        sched = derive_schedule(departures, min_observations=1)
+        assert sched, "fixture produced no schedule"
+        for entry in sched.values():
+            assert 0 <= entry["median_minute"] < 24 * 60
+            assert entry["spread_minutes"] >= 0
+            assert entry["observations"] >= 1
+
+    def test_empty_input(self):
+        from src.opensky import derive_schedule
+        assert derive_schedule([]) == {}
