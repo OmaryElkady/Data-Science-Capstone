@@ -164,3 +164,15 @@ OPENSKY_CLIENT_SECRET_KEY = "opensky_client_secret"
 
 # Raw snapshot landing table for the live state feed.
 OPENSKY_STATES = f"{CATALOG}.{SCHEMA}.opensky_states"
+
+# ---------------------------------------------------------------------------
+# Alternative-flight recommender
+# ---------------------------------------------------------------------------
+# 10 percentage points was too coarse. The pre-departure model's probabilities
+# on a single route cluster tightly — flights sharing an origin, destination and
+# hour see nearly identical features — so a 10pp gap essentially never occurs and
+# the recommender returned nothing. 3pp is meaningful against a ~20% base rate
+# (roughly a sixth of the base rate) while still clearing the model's own noise.
+ALTERNATIVE_MIN_IMPROVEMENT_PCT = 3.0
+ALTERNATIVE_WINDOW_MINUTES = 240   # +/- 4 hours around the flight of interest
+ALTERNATIVE_TOP_N = 5
