@@ -109,6 +109,17 @@ def project_to_silver(payload: dict[str, Any]) -> pd.DataFrame:
             # here means no IATA-to-ICAO mapping table is needed anywhere:
             # AviationStack already supplies the ICAO spelling.
             "flight_icao": (flight.get("icao") or "").strip().upper() or None,
+            "flight_iata": (flight.get("iata") or "").strip().upper() or None,
+            # AviationStack returns one row per *marketing* flight number, so a
+            # single aircraft appears several times: ATL-LAX at 18:47 came back
+            # as DL753, WS6993 and AM4626. `codeshared` is null only on the row
+            # for the operating carrier. Without this flag the recommender
+            # offers the same aeroplane as an alternative to itself.
+            "is_codeshare": flight.get("codeshared") is not None,
+            "operating_flight_iata": (
+                ((flight.get("codeshared") or {}).get("flight_iata") or "").strip().upper()
+                or None
+            ),
             "origin_airport_code": dep.get("iata"),
             "destination_airport_code": arr.get("iata"),
             "flight_date": flight_date,
