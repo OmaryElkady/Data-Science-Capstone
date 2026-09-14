@@ -1,5 +1,10 @@
 # Review Findings — migration/v2
 
+> **Closed.** Every item below was found in a review of this branch and has since been
+> fixed; the file is kept as a record of what the review caught, not as outstanding work.
+> `P1` refers to `MIGRATION_PLAN.md` and `README_TEMPLATE.md`, which were moved to
+> `docs/migration-notes.md` and replaced by a written `README.md` respectively.
+
 Punch-list from a full read of the branch. Ordered by severity. Hand to Claude Code one section at a time.
 
 ---
