@@ -2,7 +2,7 @@
 
 This is the exact sequence to bring the platform up on Databricks Free Edition and the artifacts to send back so the README can be finalized with real numbers.
 
-Reading order: this file, then `MIGRATION_PLAN.md` for the "why" behind each step.
+Reading order: this file, then `migration-notes.md` for the "why" behind each step.
 
 ---
 

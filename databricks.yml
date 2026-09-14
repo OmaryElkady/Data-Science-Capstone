@@ -116,15 +116,16 @@ resources:
           notebook_task:
             notebook_path: ./notebooks/06_api_ingest.ipynb
             base_parameters:
-              USE_FIXTURE: "false"
+              # Two inputs. Origin, destination, times, distance, aircraft and
+              # both OpenSky join keys are derived from the flight number by
+              # AeroDataBox, so they are outputs rather than parameters.
+              FLIGHT_NUMBER: "DL1572"
+              # Left unset so the notebook defaults to today. Today is the only
+              # date on which a live aircraft match can succeed: the OpenSky
+              # snapshot is always current, so a flight from another day is not
+              # in it to be found.
+              FIND_ALTERNATIVES: "true"
               USE_OPENSKY: "true"
-              DEP_IATA: "ATL"
-              # Empty on purpose. Setting both origin and destination pins the
-              # query to one route; ATL-LAX is a dozen flights a day and the live
-              # snapshot regularly holds none of them, which returns zero rows.
-              # Origin alone returns the airport's departures — more data, and the
-              # airport-day grain the congestion features need.
-              ARR_IATA: ""
 
         - task_key: score
           depends_on: [{ task_key: api_ingest }]
