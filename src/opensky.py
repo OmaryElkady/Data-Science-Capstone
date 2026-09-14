@@ -209,6 +209,91 @@ def _fetch_token_with_expiry(client_id: str, client_secret: str) -> tuple[str, i
     return token, int(body.get("expires_in", 1800))
 
 
+DEPARTURES_URL = "https://opensky-network.org/api/flights/departure"
+
+# The departure endpoint rejects long intervals: 36 hours is accepted, 48 is not.
+# A day per call keeps every request comfortably inside that and makes the
+# chunking obvious when reading the loop.
+DEPARTURE_CHUNK_SECONDS = 24 * 3600
+
+
+def fetch_departures(client, airport_icao: str, days: int = 5) -> list[dict]:
+    """Departure records for an airport over the last `days`, one call per day.
+
+    Each record carries a callsign and `firstSeen`, the moment the airframe was
+    first observed airborne. That is wheels-off, not gate-out.
+    """
+    import time as _time
+
+    now = int(_time.time())
+    out: list[dict] = []
+    for day in range(days):
+        end = now - day * DEPARTURE_CHUNK_SECONDS
+        resp = requests.get(
+            DEPARTURES_URL,
+            headers={"Authorization": f"Bearer {client.token()}"},
+            params={"airport": airport_icao.upper(),
+                    "begin": end - DEPARTURE_CHUNK_SECONDS, "end": end},
+            timeout=90,
+        )
+        if resp.status_code == 404:
+            continue          # no departures in that window; not an error
+        resp.raise_for_status()
+        out.extend(resp.json() or [])
+    return out
+
+
+def derive_schedule(records: Iterable[dict], min_observations: int = 3) -> dict[str, dict]:
+    """A de-facto timetable, built from when flights *actually* left.
+
+    OpenSky publishes no schedule. But a flight number is a recurring daily
+    service, so the median time of day at which a callsign has been observed
+    getting airborne is a usable stand-in for when it is meant to go — derived
+    from observation rather than from a paid feed.
+
+    Two things come out of it, and the second is the more interesting:
+
+    `median_minute`  the middle of the observed departures, in minutes past
+                     midnight UTC. A stand-in for the scheduled time.
+    `spread_minutes` the range across observations. A flight that always leaves
+                     within twenty minutes of the same time is a different
+                     proposition from one that varies by two hours, and no
+                     published schedule says which is which.
+
+    Median rather than mean, because a single three-hour delay would drag a mean
+    somewhere the flight has never actually departed.
+
+    The caveat that matters: this is **wheels-off**, and the models are trained on
+    BTS gate delay. The two differ by taxi-out. Used to corroborate or to fall
+    back on, never as a drop-in for a scheduled gate time.
+    """
+    import statistics
+    import time as _time
+    from collections import defaultdict
+
+    seen: dict[str, list[int]] = defaultdict(list)
+    for record in records:
+        callsign = normalise_callsign(record.get("callsign"))
+        first = record.get("firstSeen")
+        if not callsign or not first:
+            continue
+        moment = _time.gmtime(int(first))
+        seen[callsign].append(moment.tm_hour * 60 + moment.tm_min)
+
+    schedule = {}
+    for callsign, minutes in seen.items():
+        if len(minutes) < min_observations:
+            continue
+        median = int(statistics.median(minutes))
+        schedule[callsign] = {
+            "median_minute": median,
+            "median_hhmm": (median // 60) * 100 + median % 60,
+            "observations": len(minutes),
+            "spread_minutes": max(minutes) - min(minutes),
+        }
+    return schedule
+
+
 def normalise_callsign(raw: Optional[str]) -> Optional[str]:
     """Strip OpenSky's padding. Returns None for absent or blank callsigns.
 
