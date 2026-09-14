@@ -153,6 +153,31 @@ def _parse_utc(block: Optional[dict]) -> Optional[datetime]:
         return None
 
 
+def _parse_local(block: Optional[dict]) -> Optional[datetime]:
+    """Local airport time, spelled '2026-09-14 12:17-04:00'.
+
+    This, not UTC, is what the clock-time features are built from. BTS records
+    `CRS_DEP_TIME` as local time at the origin, so the model learned hour-of-day
+    risk on a local clock — `02_eda` measured the quietest hour at 05:00 and the
+    worst at 19:00, both local. Feeding it a UTC hour reads a different point on
+    that curve: DL1572 leaves Atlanta at 12:17 local and 16:17Z, and scoring it
+    as a 16:00 departure is simply a different flight as far as the model is
+    concerned.
+
+    The same applies to the date. BTS `FL_DATE` is the local calendar date, which
+    for a late-evening departure is the previous day in UTC.
+    """
+    if not block:
+        return None
+    raw = block.get("local")
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw.strip(), "%Y-%m-%d %H:%M%z")
+    except ValueError:
+        return None
+
+
 def _hhmm(dt: Optional[datetime]) -> Optional[int]:
     return None if dt is None else dt.hour * 100 + dt.minute
 
@@ -178,8 +203,15 @@ def flight_to_row(flight: dict) -> Optional[dict]:
     dep, arr = flight.get("departure") or {}, flight.get("arrival") or {}
     dep_ap, arr_ap = dep.get("airport") or {}, arr.get("airport") or {}
 
+    # Two clocks, each for a different job.
+    #   UTC   — durations and delays. Subtracting two UTC instants is unambiguous
+    #           and immune to a DST boundary falling between them.
+    #   local — every clock-time feature, because that is the clock BTS recorded
+    #           and therefore the clock the model learned on.
     dep_sched = _parse_utc(dep.get("scheduledTime"))
     arr_sched = _parse_utc(arr.get("scheduledTime"))
+    dep_local = _parse_local(dep.get("scheduledTime")) or dep_sched
+    arr_local = _parse_local(arr.get("scheduledTime")) or arr_sched
     if dep_sched is None or not dep_ap.get("iata") or not arr_ap.get("iata"):
         return None
 
@@ -191,7 +223,10 @@ def flight_to_row(flight: dict) -> Optional[dict]:
     dep_delay = _delay_minutes(dep_sched, _parse_utc(dep.get("revisedTime")))
     arr_delay = _delay_minutes(arr_sched, _parse_utc(arr.get("revisedTime")))
 
-    crs_dep, crs_arr = _hhmm(dep_sched), _hhmm(arr_sched)
+    # Local clock times, matching BTS CRS_DEP_TIME / CRS_ARR_TIME.
+    crs_dep, crs_arr = _hhmm(dep_local), _hhmm(arr_local)
+    # Block time from UTC: a flight crossing three zones has no meaningful
+    # local-to-local duration, and UTC gives the real elapsed minutes.
     elapsed = (
         (arr_sched - dep_sched).total_seconds() / 60.0
         if arr_sched is not None else None
@@ -201,7 +236,9 @@ def flight_to_row(flight: dict) -> Optional[dict]:
     # unit-tested helpers 03_silver uses, so a live row and a training row derive
     # these fields identically — including Spark's 1=Sunday day-of-week
     # convention, which is off by one from Python's if taken directly.
-    flight_day = dep_sched.date()
+    # Local date, as BTS FL_DATE is. A 22:00 local departure is the next day in
+    # UTC, and dating it that way would move it to the wrong day of the week.
+    flight_day = dep_local.date()
     dow = spark_day_of_week(flight_day)
 
     return {
@@ -229,7 +266,12 @@ def flight_to_row(flight: dict) -> Optional[dict]:
         "fl_number": int(digits) if digits.isdigit() else None,
         "origin_airport_code": dep_ap.get("iata"),
         "destination_airport_code": arr_ap.get("iata"),
-        "flight_date": dep_sched.date(),
+        "flight_date": flight_day,
+        # Kept for display and for joining against the OpenSky snapshot, which is
+        # timestamped in UTC. The features above are local; these two are not, and
+        # naming them makes the difference impossible to miss.
+        "scheduled_departure_utc": dep_sched,
+        "origin_timezone": dep_ap.get("timeZone"),
         "crs_dep_time": crs_dep,
         "crs_arr_time": crs_arr,
         "crs_elapsed_time": elapsed,
