@@ -246,7 +246,7 @@ tested against the shape the APIs actually return.
 
 ## Reproducing
 
-**Prerequisites:** Databricks Free Edition, serverless environment version 4 (required for
+**Prerequisites:** Databricks Free Edition, serverless environment version 5 (required for
 `pyspark.ml` and `mlflow.spark`), `flights_sample_3m.csv` in `/Volumes/workspace/flights/raw/`.
 
 ```bash
