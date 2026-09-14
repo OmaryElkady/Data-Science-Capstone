@@ -47,34 +47,34 @@ resources:
       name: flight-delay-training
       max_concurrent_runs: 1
 
-      # Serverless environment. Environment version 4 is required for
+      # Serverless environment. Environment version 5 is required for
       # `pyspark.ml` and `mlflow.spark`; on an older version 05_train fails at
       # import. Declaring dependencies here rather than leaving `%pip install`
       # in the notebooks means the environment is built once per run instead of
       # per notebook, and the versions are recorded in code.
       environments:
-        - environment_key: serverless_v4
+        - environment_key: serverless_v5
           spec:
-            environment_version: "4"
+            environment_version: "5"
             dependencies:
               - holidays>=0.50
               - hyperopt
 
       tasks:
         - task_key: bronze
-          environment_key: serverless_v4
+          environment_key: serverless_v5
           notebook_task:
             notebook_path: ./notebooks/01_bronze.ipynb
 
         - task_key: silver
           depends_on: [{ task_key: bronze }]
-          environment_key: serverless_v4
+          environment_key: serverless_v5
           notebook_task:
             notebook_path: ./notebooks/03_silver.ipynb
 
         - task_key: gold
           depends_on: [{ task_key: silver }]
-          environment_key: serverless_v4
+          environment_key: serverless_v5
           notebook_task:
             notebook_path: ./notebooks/04_gold.ipynb
             base_parameters:
@@ -84,7 +84,7 @@ resources:
 
         - task_key: train
           depends_on: [{ task_key: gold }]
-          environment_key: serverless_v4
+          environment_key: serverless_v5
           notebook_task:
             notebook_path: ./notebooks/05_train.ipynb
             base_parameters:
@@ -104,15 +104,15 @@ resources:
       max_concurrent_runs: 1
 
       environments:
-        - environment_key: serverless_v4
+        - environment_key: serverless_v5
           spec:
-            environment_version: "4"
+            environment_version: "5"
             dependencies:
               - holidays>=0.50
 
       tasks:
         - task_key: api_ingest
-          environment_key: serverless_v4
+          environment_key: serverless_v5
           notebook_task:
             notebook_path: ./notebooks/06_api_ingest.ipynb
             base_parameters:
@@ -128,7 +128,7 @@ resources:
 
         - task_key: score
           depends_on: [{ task_key: api_ingest }]
-          environment_key: serverless_v4
+          environment_key: serverless_v5
           notebook_task:
             notebook_path: ./notebooks/07_score.ipynb
 

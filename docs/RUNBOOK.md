@@ -10,7 +10,7 @@ Reading order: this file, then `MIGRATION_PLAN.md` for the "why" behind each ste
 
 1. Sign up at [Databricks Free Edition](https://docs.databricks.com/aws/en/getting-started/free-edition).
 2. **Complete LinkedIn verification** in Account Settings. This unlocks general outbound internet — required for AviationStack.
-3. Open a scratch notebook. In the right-hand **Environment** panel, set **Environment version 4**. Verify:
+3. Open a scratch notebook. In the right-hand **Environment** panel, set **Environment version 5**. Verify:
    ```python
    import pyspark.ml, mlflow.spark, sys
    print(sys.version, pyspark.__version__, mlflow.__version__)
