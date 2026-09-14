@@ -13,7 +13,7 @@ Four separate failures were stacked on top of each other. Only #1 was Community 
 |---|---|---|---|
 | 1 | **Outbound HTTP to AviationStack blocked by Databricks-side egress control** | `BASE_URL = 'http://api.aviationstack.com/v1/'` in `src/API_pipeline.py:90` | Free Edition restricts outbound internet to a trusted-domain allowlist. **LinkedIn identity verification unlocks general outbound internet access.** Do this first. |
 | 2 | **Registry mismatch — models were written to one registry and read from another** | Training notebook sets `MLFLOW_REGISTRY_URI = "databricks"` (workspace registry, with the comment `# Changed from databricks-uc`), but `API_to_ML_Prediction_Dashboard.py:95-98` loads `models:/workspace.default.model_gbt_pre@flight` and `...Dashboardtest.py:102` sets `databricks-uc`. A workspace-registry model is not addressable by a 3-level UC name, so `mlflow.spark.load_model` fails no matter which compute runs it. | Register to UC with 3-level names from the training run itself. This is the actual "models saved in one place, code ran in another" bug. |
-| 3 | **Spark ML was not supported on serverless** | Whole project is `pyspark.ml` + `mlflow.spark` | Serverless **environment version 4** added `pyspark.ml` and `mlflow.spark` support. Must be explicitly selected in the notebook Environment panel. |
+| 3 | **Spark ML was not supported on serverless** | Whole project is `pyspark.ml` + `mlflow.spark` | Serverless **environment version 5** added `pyspark.ml` and `mlflow.spark` support. Must be explicitly selected in the notebook Environment panel. |
 | 4 | **Broken table lineage** | `Gold_table.ipynb` writes `default.gold_ml_features`; training reads `default.gold_ml_features_experimental` | Single config module, one source of truth for names. |
 
 Also worth knowing before you start:
@@ -26,7 +26,7 @@ Also worth knowing before you start:
 ## Phase 0 — Workspace prep (~45 min)
 
 - [ ] Create Free Edition account; **complete LinkedIn verification** (unlocks outbound internet — this is the unblock for Phase 3).
-- [ ] Open a notebook → **Environment** side panel → set **environment version 4**. Confirm with:
+- [ ] Open a notebook → **Environment** side panel → set **environment version 5**. Confirm with:
   ```python
   import pyspark.ml, mlflow.spark, sys
   print(sys.version, pyspark.__version__, mlflow.__version__)
@@ -46,7 +46,7 @@ Also worth knowing before you start:
   databricks secrets put-secret flights aviationstack_key
   ```
 
-**Exit criteria:** env v4 notebook runs `import pyspark.ml` clean; CSV visible in Catalog Explorer under the volume.
+**Exit criteria:** env v5 notebook runs `import pyspark.ml` clean; CSV visible in Catalog Explorer under the volume.
 
 ---
 
@@ -94,7 +94,7 @@ Also worth knowing before you start:
   c.set_registered_model_alias(f"{CATALOG}.{SCHEMA}.gbt_pre_departure", "champion", v)
   ```
   Delete the whole `try/except` alias block sitting inside the `Config` class body — side effects in a class definition is the single worst code smell a reviewer will hit in this repo.
-- [ ] Delete the CE-era workarounds: `MLFLOW_DFS_TMP` / `SPARKML_TEMP_DFS_PATH` env vars and `setup_uc_volume()`. Not needed on env v4; test after removing.
+- [ ] Delete the CE-era workarounds: `MLFLOW_DFS_TMP` / `SPARKML_TEMP_DFS_PATH` env vars and `setup_uc_volume()`. Not needed on env v5; test after removing.
 - [ ] **Bound the hyperopt space for the 100 MB cap**: RF `numTrees ≤ 50`, `maxDepth ≤ 8`; GBT `maxIter ≤ 30`, `maxDepth ≤ 6`. Log the serialized model size as a tag so the constraint is visible and defensible.
 - [ ] **Stop hardcoding `SELECTED_INDICES_IN`.** That 40-integer list in `Config` is unreproducible — nobody, including future you, can regenerate it. Have the feature-selection step write the indices + feature names to `{CATALOG}.{SCHEMA}.feature_manifest` (or a JSON artifact on the run) and have scoring read them back.
 - [ ] Log a confusion matrix and ROC curve as artifacts on each run — they become README images for free.
