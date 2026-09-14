@@ -1,0 +1,159 @@
+[
+ {
+  "greatCircleDistance": {
+   "meter": 1109114.91,
+   "km": 1109.11,
+   "mile": 689.17,
+   "nm": 598.87,
+   "feet": 3638828.45
+  },
+  "departure": {
+   "airport": {
+    "icao": "KATL",
+    "iata": "ATL",
+    "name": "Atlanta Hartsfield Jackson",
+    "shortName": "Hartsfield Jackson",
+    "municipalityName": "Atlanta",
+    "location": {
+     "lat": 33.6367,
+     "lon": -84.4281
+    },
+    "countryCode": "US",
+    "timeZone": "America/New_York"
+   },
+   "scheduledTime": {
+    "utc": "2026-09-14 16:17Z",
+    "local": "2026-09-14 12:17-04:00"
+   },
+   "revisedTime": {
+    "utc": "2026-09-14 16:17Z",
+    "local": "2026-09-14 12:17-04:00"
+   },
+   "terminal": "S",
+   "quality": [
+    "Basic",
+    "Live"
+   ]
+  },
+  "arrival": {
+   "airport": {
+    "icao": "KIAH",
+    "iata": "IAH",
+    "name": "Houston George Bush",
+    "shortName": "George Bush",
+    "municipalityName": "Houston",
+    "location": {
+     "lat": 29.9844,
+     "lon": -95.3414
+    },
+    "countryCode": "US",
+    "timeZone": "America/Chicago"
+   },
+   "scheduledTime": {
+    "utc": "2026-09-14 18:22Z",
+    "local": "2026-09-14 13:22-05:00"
+   },
+   "revisedTime": {
+    "utc": "2026-09-14 17:48Z",
+    "local": "2026-09-14 12:48-05:00"
+   },
+   "predictedTime": {
+    "utc": "2026-09-14 18:32Z",
+    "local": "2026-09-14 13:32-05:00"
+   },
+   "terminal": "A",
+   "quality": [
+    "Basic",
+    "Live"
+   ]
+  },
+  "lastUpdatedUtc": "2026-09-14 15:28Z",
+  "number": "DL 1572",
+  "callSign": "DAL1572",
+  "status": "Expected",
+  "codeshareStatus": "IsOperator",
+  "isCargo": false,
+  "aircraft": {
+   "reg": "N310DN",
+   "modeS": "A34729",
+   "model": "Airbus A321"
+  },
+  "airline": {
+   "name": "Delta Air Lines",
+   "iata": "DL",
+   "icao": "DAL"
+  }
+ },
+ {
+  "greatCircleDistance": {
+   "meter": 1109114.91,
+   "km": 1109.11,
+   "mile": 689.17,
+   "nm": 598.87,
+   "feet": 3638828.45
+  },
+  "departure": {
+   "airport": {
+    "icao": "KIAH",
+    "iata": "IAH",
+    "name": "Houston George Bush",
+    "shortName": "George Bush",
+    "municipalityName": "Houston",
+    "location": {
+     "lat": 29.9844,
+     "lon": -95.3414
+    },
+    "countryCode": "US",
+    "timeZone": "America/Chicago"
+   },
+   "scheduledTime": {
+    "utc": "2026-09-14 19:27Z",
+    "local": "2026-09-14 14:27-05:00"
+   },
+   "terminal": "A",
+   "quality": [
+    "Basic"
+   ]
+  },
+  "arrival": {
+   "airport": {
+    "icao": "KATL",
+    "iata": "ATL",
+    "name": "Atlanta Hartsfield Jackson",
+    "shortName": "Hartsfield Jackson",
+    "municipalityName": "Atlanta",
+    "location": {
+     "lat": 33.6367,
+     "lon": -84.4281
+    },
+    "countryCode": "US",
+    "timeZone": "America/New_York"
+   },
+   "scheduledTime": {
+    "utc": "2026-09-14 21:36Z",
+    "local": "2026-09-14 17:36-04:00"
+   },
+   "predictedTime": {
+    "utc": "2026-09-14 21:35Z",
+    "local": "2026-09-14 17:35-04:00"
+   },
+   "terminal": "S",
+   "quality": [
+    "Basic"
+   ]
+  },
+  "lastUpdatedUtc": "2026-08-08 19:15Z",
+  "number": "DL 1572",
+  "status": "Unknown",
+  "codeshareStatus": "Unknown",
+  "isCargo": false,
+  "aircraft": {
+   "model": "Airbus A321"
+  },
+  "airline": {
+   "name": "Delta Air Lines",
+   "iata": "DL",
+   "icao": "DAL"
+  }
+ }
+]

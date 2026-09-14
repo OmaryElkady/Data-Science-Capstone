@@ -1,0 +1,633 @@
+{
+ "departures": [
+  {
+   "movement": {
+    "airport": {
+     "icao": "KIAH",
+     "iata": "IAH",
+     "name": "Houston",
+     "countryCode": "us",
+     "timeZone": "America/Chicago"
+    },
+    "scheduledTime": {
+     "utc": "2026-09-14 20:03Z",
+     "local": "2026-09-14 16:03-04:00"
+    },
+    "terminal": "N",
+    "quality": [
+     "Basic"
+    ]
+   },
+   "number": "UA 3987",
+   "status": "Unknown",
+   "codeshareStatus": "Unknown",
+   "isCargo": false,
+   "aircraft": {
+    "model": "Embraer 175"
+   },
+   "airline": {
+    "name": "United",
+    "iata": "UA",
+    "icao": "UAL"
+   }
+  },
+  {
+   "movement": {
+    "airport": {
+     "icao": "KIAH",
+     "iata": "IAH",
+     "name": "Houston",
+     "countryCode": "us",
+     "timeZone": "America/Chicago"
+    },
+    "scheduledTime": {
+     "utc": "2026-09-14 20:25Z",
+     "local": "2026-09-14 16:25-04:00"
+    },
+    "terminal": "S",
+    "quality": [
+     "Basic"
+    ]
+   },
+   "number": "DL 1131",
+   "status": "Unknown",
+   "codeshareStatus": "Unknown",
+   "isCargo": false,
+   "aircraft": {
+    "model": "Airbus A320"
+   },
+   "airline": {
+    "name": "Delta Air Lines",
+    "iata": "DL",
+    "icao": "DAL"
+   }
+  },
+  {
+   "movement": {
+    "airport": {
+     "icao": "KMCO",
+     "iata": "MCO",
+     "name": "Orlando",
+     "countryCode": "us",
+     "timeZone": "America/New_York"
+    },
+    "scheduledTime": {
+     "utc": "2026-09-14 19:00Z",
+     "local": "2026-09-14 15:00-04:00"
+    },
+    "terminal": "S",
+    "quality": [
+     "Basic"
+    ]
+   },
+   "number": "DL 1150",
+   "status": "Unknown",
+   "codeshareStatus": "Unknown",
+   "isCargo": false,
+   "aircraft": {
+    "model": "Boeing 757"
+   },
+   "airline": {
+    "name": "Delta Air Lines",
+    "iata": "DL",
+    "icao": "DAL"
+   }
+  },
+  {
+   "movement": {
+    "airport": {
+     "icao": "CYUL",
+     "iata": "YUL",
+     "name": "Montreal",
+     "countryCode": "ca",
+     "timeZone": "America/Toronto"
+    },
+    "scheduledTime": {
+     "utc": "2026-09-14 19:00Z",
+     "local": "2026-09-14 15:00-04:00"
+    },
+    "terminal": "I",
+    "quality": [
+     "Basic"
+    ]
+   },
+   "number": "DL 2665",
+   "status": "Expected",
+   "codeshareStatus": "IsOperator",
+   "isCargo": false,
+   "aircraft": {
+    "model": "Airbus A319"
+   },
+   "airline": {
+    "name": "Delta Air Lines",
+    "iata": "DL",
+    "icao": "DAL"
+   }
+  },
+  {
+   "movement": {
+    "airport": {
+     "icao": "KDFW",
+     "iata": "DFW",
+     "name": "Dallas-Fort Worth",
+     "countryCode": "us",
+     "timeZone": "America/Chicago"
+    },
+    "scheduledTime": {
+     "utc": "2026-09-14 19:02Z",
+     "local": "2026-09-14 15:02-04:00"
+    },
+    "terminal": "N",
+    "quality": [
+     "Basic"
+    ]
+   },
+   "number": "AA 3104",
+   "status": "Unknown",
+   "codeshareStatus": "Unknown",
+   "isCargo": false,
+   "aircraft": {
+    "model": "Boeing 737-800"
+   },
+   "airline": {
+    "name": "American",
+    "iata": "AA",
+    "icao": "AAL"
+   }
+  },
+  {
+   "movement": {
+    "airport": {
+     "icao": "KRSW",
+     "iata": "RSW",
+     "name": "Fort Myers",
+     "countryCode": "us",
+     "timeZone": "America/New_York"
+    },
+    "scheduledTime": {
+     "utc": "2026-09-14 19:05Z",
+     "local": "2026-09-14 15:05-04:00"
+    },
+    "terminal": "S",
+    "quality": [
+     "Basic"
+    ]
+   },
+   "number": "DL 1379",
+   "status": "Unknown",
+   "codeshareStatus": "Unknown",
+   "isCargo": false,
+   "aircraft": {
+    "model": "Airbus A321"
+   },
+   "airline": {
+    "name": "Delta Air Lines",
+    "iata": "DL",
+    "icao": "DAL"
+   }
+  },
+  {
+   "movement": {
+    "airport": {
+     "icao": "KDEN",
+     "iata": "DEN",
+     "name": "Denver",
+     "countryCode": "us",
+     "timeZone": "America/Denver"
+    },
+    "scheduledTime": {
+     "utc": "2026-09-14 19:06Z",
+     "local": "2026-09-14 15:06-04:00"
+    },
+    "terminal": "S",
+    "quality": [
+     "Basic"
+    ]
+   },
+   "number": "DL 493",
+   "status": "Unknown",
+   "codeshareStatus": "Unknown",
+   "isCargo": false,
+   "aircraft": {
+    "model": "Airbus A321"
+   },
+   "airline": {
+    "name": "Delta Air Lines",
+    "iata": "DL",
+    "icao": "DAL"
+   }
+  },
+  {
+   "movement": {
+    "airport": {
+     "icao": "KBHM",
+     "iata": "BHM",
+     "name": "Birmingham",
+     "countryCode": "us",
+     "timeZone": "America/Chicago"
+    },
+    "scheduledTime": {
+     "utc": "2026-09-14 19:07Z",
+     "local": "2026-09-14 15:07-04:00"
+    },
+    "revisedTime": {
+     "utc": "2026-09-14 19:07Z",
+     "local": "2026-09-14 15:07-04:00"
+    },
+    "quality": [
+     "Basic",
+     "Live"
+    ]
+   },
+   "number": "LXJ 435",
+   "callSign": "LXJ435",
+   "status": "Expected",
+   "codeshareStatus": "IsOperator",
+   "isCargo": false,
+   "aircraft": {
+    "reg": "N435FX",
+    "modeS": "A53644",
+    "model": "E545"
+   },
+   "airline": {
+    "name": "Flexjet",
+    "icao": "LXJ"
+   }
+  },
+  {
+   "movement": {
+    "airport": {
+     "icao": "KEWR",
+     "iata": "EWR",
+     "name": "Newark",
+     "countryCode": "us",
+     "timeZone": "America/New_York"
+    },
+    "scheduledTime": {
+     "utc": "2026-09-14 19:09Z",
+     "local": "2026-09-14 15:09-04:00"
+    },
+    "terminal": "N",
+    "quality": [
+     "Basic"
+    ]
+   },
+   "number": "UA 555",
+   "status": "Unknown",
+   "codeshareStatus": "Unknown",
+   "isCargo": false,
+   "aircraft": {
+    "model": "Boeing 737"
+   },
+   "airline": {
+    "name": "United",
+    "iata": "UA",
+    "icao": "UAL"
+   }
+  },
+  {
+   "movement": {
+    "airport": {
+     "icao": "KTPA",
+     "iata": "TPA",
+     "name": "Tampa",
+     "countryCode": "us",
+     "timeZone": "America/New_York"
+    },
+    "scheduledTime": {
+     "utc": "2026-09-14 19:15Z",
+     "local": "2026-09-14 15:15-04:00"
+    },
+    "terminal": "S",
+    "quality": [
+     "Basic"
+    ]
+   },
+   "number": "DL 759",
+   "callSign": "DAL759",
+   "status": "Unknown",
+   "codeshareStatus": "IsOperator",
+   "isCargo": false,
+   "aircraft": {
+    "reg": "N6716C",
+    "modeS": "A8E29C",
+    "model": "Boeing 757"
+   },
+   "airline": {
+    "name": "Delta Air Lines",
+    "iata": "DL",
+    "icao": "DAL"
+   }
+  },
+  {
+   "movement": {
+    "airport": {
+     "icao": "KGRR",
+     "iata": "GRR",
+     "name": "Grand Rapids",
+     "countryCode": "us",
+     "timeZone": "America/Detroit"
+    },
+    "scheduledTime": {
+     "utc": "2026-09-14 19:15Z",
+     "local": "2026-09-14 15:15-04:00"
+    },
+    "terminal": "S",
+    "quality": [
+     "Basic"
+    ]
+   },
+   "number": "DL 2058",
+   "status": "Unknown",
+   "codeshareStatus": "Unknown",
+   "isCargo": false,
+   "aircraft": {
+    "model": "Boeing 737-900"
+   },
+   "airline": {
+    "name": "Delta Air Lines",
+    "iata": "DL",
+    "icao": "DAL"
+   }
+  },
+  {
+   "movement": {
+    "airport": {
+     "icao": "KSLC",
+     "iata": "SLC",
+     "name": "Salt Lake City",
+     "countryCode": "us",
+     "timeZone": "America/Denver"
+    },
+    "scheduledTime": {
+     "utc": "2026-09-14 19:15Z",
+     "local": "2026-09-14 15:15-04:00"
+    },
+    "terminal": "S",
+    "quality": [
+     "Basic"
+    ]
+   },
+   "number": "DL 526",
+   "status": "Unknown",
+   "codeshareStatus": "Unknown",
+   "isCargo": false,
+   "aircraft": {
+    "model": "Boeing 757-200"
+   },
+   "airline": {
+    "name": "Delta Air Lines",
+    "iata": "DL",
+    "icao": "DAL"
+   }
+  },
+  {
+   "movement": {
+    "airport": {
+     "icao": "KCHS",
+     "iata": "CHS",
+     "name": "Charleston",
+     "countryCode": "us",
+     "timeZone": "America/New_York"
+    },
+    "scheduledTime": {
+     "utc": "2026-09-14 19:15Z",
+     "local": "2026-09-14 15:15-04:00"
+    },
+    "terminal": "S",
+    "quality": [
+     "Basic"
+    ]
+   },
+   "number": "DL 2174",
+   "status": "Unknown",
+   "codeshareStatus": "Unknown",
+   "isCargo": false,
+   "aircraft": {
+    "model": "Boeing 737-900"
+   },
+   "airline": {
+    "name": "Delta Air Lines",
+    "iata": "DL",
+    "icao": "DAL"
+   }
+  },
+  {
+   "movement": {
+    "airport": {
+     "icao": "KOMA",
+     "iata": "OMA",
+     "name": "Omaha",
+     "countryCode": "us",
+     "timeZone": "America/Chicago"
+    },
+    "scheduledTime": {
+     "utc": "2026-09-14 19:15Z",
+     "local": "2026-09-14 15:15-04:00"
+    },
+    "terminal": "S",
+    "quality": [
+     "Basic"
+    ]
+   },
+   "number": "DL 2364",
+   "status": "Unknown",
+   "codeshareStatus": "Unknown",
+   "isCargo": false,
+   "aircraft": {
+    "model": "Airbus A320"
+   },
+   "airline": {
+    "name": "Delta Air Lines",
+    "iata": "DL",
+    "icao": "DAL"
+   }
+  },
+  {
+   "movement": {
+    "airport": {
+     "icao": "KALB",
+     "iata": "ALB",
+     "name": "Albany",
+     "countryCode": "us",
+     "timeZone": "America/New_York"
+    },
+    "scheduledTime": {
+     "utc": "2026-09-14 19:15Z",
+     "local": "2026-09-14 15:15-04:00"
+    },
+    "terminal": "S",
+    "quality": [
+     "Basic"
+    ]
+   },
+   "number": "DL 1241",
+   "status": "Unknown",
+   "codeshareStatus": "Unknown",
+   "isCargo": false,
+   "aircraft": {
+    "model": "Airbus A320"
+   },
+   "airline": {
+    "name": "Delta Air Lines",
+    "iata": "DL",
+    "icao": "DAL"
+   }
+  },
+  {
+   "movement": {
+    "airport": {
+     "icao": "KSTL",
+     "iata": "STL",
+     "name": "Saint Louis",
+     "countryCode": "us",
+     "timeZone": "America/Chicago"
+    },
+    "scheduledTime": {
+     "utc": "2026-09-14 19:15Z",
+     "local": "2026-09-14 15:15-04:00"
+    },
+    "terminal": "S",
+    "quality": [
+     "Basic"
+    ]
+   },
+   "number": "DL 543",
+   "status": "Unknown",
+   "codeshareStatus": "Unknown",
+   "isCargo": false,
+   "aircraft": {
+    "model": "Boeing 737-900"
+   },
+   "airline": {
+    "name": "Delta Air Lines",
+    "iata": "DL",
+    "icao": "DAL"
+   }
+  },
+  {
+   "movement": {
+    "airport": {
+     "icao": "KROC",
+     "iata": "ROC",
+     "name": "Rochester",
+     "countryCode": "us",
+     "timeZone": "America/New_York"
+    },
+    "scheduledTime": {
+     "utc": "2026-09-14 19:15Z",
+     "local": "2026-09-14 15:15-04:00"
+    },
+    "terminal": "S",
+    "quality": [
+     "Basic"
+    ]
+   },
+   "number": "DL 2047",
+   "status": "Unknown",
+   "codeshareStatus": "Unknown",
+   "isCargo": false,
+   "aircraft": {
+    "model": "Airbus A320"
+   },
+   "airline": {
+    "name": "Delta Air Lines",
+    "iata": "DL",
+    "icao": "DAL"
+   }
+  },
+  {
+   "movement": {
+    "airport": {
+     "icao": "KOKC",
+     "iata": "OKC",
+     "name": "Oklahoma City",
+     "countryCode": "us",
+     "timeZone": "America/Chicago"
+    },
+    "scheduledTime": {
+     "utc": "2026-09-14 19:16Z",
+     "local": "2026-09-14 15:16-04:00"
+    },
+    "terminal": "S",
+    "quality": [
+     "Basic"
+    ]
+   },
+   "number": "DL 2862",
+   "status": "Unknown",
+   "codeshareStatus": "Unknown",
+   "isCargo": false,
+   "aircraft": {
+    "model": "Boeing 717-200"
+   },
+   "airline": {
+    "name": "Delta Air Lines",
+    "iata": "DL",
+    "icao": "DAL"
+   }
+  },
+  {
+   "movement": {
+    "airport": {
+     "icao": "KBOS",
+     "iata": "BOS",
+     "name": "Boston",
+     "countryCode": "us",
+     "timeZone": "America/New_York"
+    },
+    "scheduledTime": {
+     "utc": "2026-09-14 19:16Z",
+     "local": "2026-09-14 15:16-04:00"
+    },
+    "terminal": "S",
+    "quality": [
+     "Basic"
+    ]
+   },
+   "number": "DL 2595",
+   "status": "Unknown",
+   "codeshareStatus": "Unknown",
+   "isCargo": false,
+   "aircraft": {
+    "model": "Airbus A321"
+   },
+   "airline": {
+    "name": "Delta Air Lines",
+    "iata": "DL",
+    "icao": "DAL"
+   }
+  },
+  {
+   "movement": {
+    "airport": {
+     "icao": "KFLL",
+     "iata": "FLL",
+     "name": "Fort Lauderdale",
+     "countryCode": "us",
+     "timeZone": "America/New_York"
+    },
+    "scheduledTime": {
+     "utc": "2026-09-14 19:17Z",
+     "local": "2026-09-14 15:17-04:00"
+    },
+    "terminal": "S",
+    "quality": [
+     "Basic"
+    ]
+   },
+   "number": "DL 2345",
+   "status": "Unknown",
+   "codeshareStatus": "Unknown",
+   "isCargo": false,
+   "aircraft": {
+    "model": "Airbus A321"
+   },
+   "airline": {
+    "name": "Delta Air Lines",
+    "iata": "DL",
+    "icao": "DAL"
+   }
+  }
+ ]
+}
