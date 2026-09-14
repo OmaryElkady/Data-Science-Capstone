@@ -62,9 +62,12 @@ class TestFlightToRow:
         assert row["aircraft_icao24"] == "a34729"     # OpenSky icao24, lowercased
         assert row["aircraft_icao24"] == row["aircraft_icao24"].lower()
 
-    def test_hhmm_matches_the_scheduled_utc_time(self, flight_payload):
-        # Departure scheduled 16:17Z in the recorded response.
-        assert flight_to_row(flight_payload[0])["crs_dep_time"] == 1617
+    def test_hhmm_is_the_local_scheduled_time(self, flight_payload):
+        # 12:17 local, 16:17Z. This test originally asserted 1617, which encoded
+        # the bug rather than the requirement: BTS CRS_DEP_TIME is local, so a
+        # UTC projection silently shifts every flight along the hour-of-day risk
+        # curve the model learned.
+        assert flight_to_row(flight_payload[0])["crs_dep_time"] == 1217
 
     def test_gate_delay_is_revised_minus_scheduled(self):
         flight = {
@@ -125,6 +128,86 @@ class TestFlightToRow:
             if row is not None:
                 assert row["origin_airport_code"] and row["destination_airport_code"]
                 assert row["crs_dep_time"] is not None
+
+
+class TestTimezoneHandling:
+    """Clock-time features are LOCAL; durations and delays are UTC.
+
+    BTS records CRS_DEP_TIME as local time at the origin, so the model learned
+    hour-of-day risk on a local clock — 02_eda measured 05:00 as the quietest
+    hour and 19:00 as the worst, both local. Projecting a UTC hour puts the
+    flight at a different point on that curve, and nothing about the mistake is
+    visible at run time: the number is plausible, just wrong.
+    """
+
+    def test_clock_times_are_local_not_utc(self, flight_payload):
+        # DL1572 leaves Atlanta at 12:17 local, 16:17Z.
+        row = flight_to_row(flight_payload[0])
+        assert row["crs_dep_time"] == 1217, "must be local, not 1617"
+        assert row["dep_hour"] == 12
+        assert row["crs_arr_time"] == 1322, "must be local at the destination"
+        assert row["arr_hour"] == 13
+
+    def test_utc_instant_is_kept_separately(self, flight_payload):
+        row = flight_to_row(flight_payload[0])
+        assert row["scheduled_departure_utc"].hour == 16
+        assert row["origin_timezone"] == "America/New_York"
+
+    def test_elapsed_uses_utc_so_zone_crossings_are_right(self, flight_payload):
+        # ATL 12:17 EDT -> IAH 13:22 CDT looks like 65 minutes on the two local
+        # clocks and is really 125. Block time has to come from UTC.
+        row = flight_to_row(flight_payload[0])
+        assert row["crs_elapsed_time"] == 125.0
+
+    def test_local_date_wins_when_the_two_disagree(self):
+        # 22:30 local on the 14th is 02:30Z on the 15th. BTS FL_DATE is the local
+        # date; dating it in UTC moves it to the wrong day of the week too.
+        flight = {
+            "departure": {"airport": {"iata": "LAX", "timeZone": "America/Los_Angeles"},
+                          "scheduledTime": {"utc": "2026-09-15 05:30Z",
+                                            "local": "2026-09-14 22:30-07:00"}},
+            "arrival": {"airport": {"iata": "JFK"},
+                        "scheduledTime": {"utc": "2026-09-15 13:00Z",
+                                          "local": "2026-09-15 09:00-04:00"}},
+            "airline": {"iata": "DL"}, "number": "DL 99",
+        }
+        row = flight_to_row(flight)
+        assert row["flight_date"].day == 14, "local date, not the UTC next-day"
+        assert row["crs_dep_time"] == 2230
+        assert row["day_of_week"] == 2, "Monday the 14th, not Tuesday the 15th"
+
+    def test_delay_is_unaffected_by_zone(self):
+        # Delay is a difference between two instants, so it must not change with
+        # how either end is displayed.
+        flight = {
+            "departure": {"airport": {"iata": "LAX"},
+                          "scheduledTime": {"utc": "2026-09-15 05:30Z",
+                                            "local": "2026-09-14 22:30-07:00"},
+                          "revisedTime": {"utc": "2026-09-15 05:50Z",
+                                          "local": "2026-09-14 22:50-07:00"}},
+            "arrival": {"airport": {"iata": "JFK"},
+                        "scheduledTime": {"utc": "2026-09-15 13:00Z"}},
+            "airline": {"iata": "DL"}, "number": "DL 99",
+        }
+        assert flight_to_row(flight)["dep_delay"] == 20.0
+
+    def test_falls_back_to_utc_when_local_is_absent(self):
+        flight = {
+            "departure": {"airport": {"iata": "ATL"},
+                          "scheduledTime": {"utc": "2026-09-14 16:17Z"}},
+            "arrival": {"airport": {"iata": "IAH"},
+                        "scheduledTime": {"utc": "2026-09-14 18:22Z"}},
+            "airline": {"iata": "DL"}, "number": "DL 1572",
+        }
+        row = flight_to_row(flight)
+        assert row["crs_dep_time"] == 1617, "no local available, so UTC is all there is"
+
+    def test_alternatives_use_the_same_clock_as_the_flight(self, airport_payload):
+        rows = [r for r in (departure_to_row(d, "ATL")
+                            for d in airport_payload["departures"]) if r]
+        # The recorded window was 15:00-17:00 local, so every hour must land in it.
+        assert all(15 <= r["dep_hour"] <= 17 for r in rows), \
+            "a UTC projection would put these at 19-21"
 
 
 class TestCalendarBlock:
