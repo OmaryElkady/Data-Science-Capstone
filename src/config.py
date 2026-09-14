@@ -173,6 +173,27 @@ OPENSKY_STATES = f"{CATALOG}.{SCHEMA}.opensky_states"
 # hour see nearly identical features — so a 10pp gap essentially never occurs and
 # the recommender returned nothing. 3pp is meaningful against a ~20% base rate
 # (roughly a sixth of the base rate) while still clearing the model's own noise.
+# ---------------------------------------------------------------------------
+# AeroDataBox (live schedules and gate times)
+# ---------------------------------------------------------------------------
+# Replaces AviationStack on the live path. The AviationStack plan in use returns
+# schedules dated roughly two weeks in the past, which makes matching against a
+# live ADS-B snapshot impossible rather than merely lossy: a flight from a
+# fortnight ago cannot be airborne now.
+#
+# AeroDataBox also supplies both OpenSky join keys directly — `callSign`
+# ("DAL1572") and `aircraft.modeS` ("A34729", which is OpenSky's icao24) — so no
+# IATA-to-ICAO mapping table is needed anywhere in the project.
+#
+# Free RapidAPI tier is metered in API units as well as requests, and the two
+# limits differ (400 units against 1,600 requests when measured). Budget by units.
+AERODATABOX_SECRET_SCOPE = "flights"
+AERODATABOX_SECRET_KEY = "aerodatabox_key"
+
+# Half-width of the window searched for alternatives at the origin airport. The
+# API caps a single query at 12 hours, so this must stay under 6.
+ALTERNATIVE_SEARCH_HOURS = 4
+
 ALTERNATIVE_MIN_IMPROVEMENT_PCT = 3.0
 ALTERNATIVE_WINDOW_MINUTES = 240   # +/- 4 hours around the flight of interest
 ALTERNATIVE_TOP_N = 5
