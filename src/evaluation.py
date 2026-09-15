@@ -26,6 +26,15 @@ from pyspark.sql import functions as F
 
 POSITIVE_PROBABILITY = "p1"
 
+# The column the registered champion serves calibrated probabilities in.
+#
+# `05_train` folds an isotonic calibrator into the champion pipeline under this
+# name and selects the decision threshold on that scale; `07_score` reads the
+# same column. Naming it here rather than in either notebook is what keeps the
+# two ends agreeing: a threshold chosen on one scale and applied to another is
+# silently wrong everywhere it is used, and nothing raises.
+CALIBRATED_PROBABILITY = "p_calibrated"
+
 
 def with_positive_probability(
     df: DataFrame, probability_col: str = "probability", out_col: str = POSITIVE_PROBABILITY
@@ -152,13 +161,30 @@ def calibration_bins(
 
 
 def full_report(
-    df: DataFrame, threshold: float, label_col: str = "label", beta: float = 1.0
+    df: DataFrame,
+    threshold: float,
+    label_col: str = "label",
+    beta: float = 1.0,
+    prob_col: str | None = None,
 ) -> dict:
-    """Every headline metric at one decision threshold, plus the AUCs."""
-    scored = with_positive_probability(df)
-    row = confusion_at(scored, [threshold], label_col=label_col)[0]
+    """Every headline metric at one decision threshold, plus the AUCs.
+
+    `prob_col` names the probability the decision is made on. Left unset, it is
+    extracted from Spark's `probability` vector, which is the raw model score.
+    Pass `CALIBRATED_PROBABILITY` when the model carries a calibrator, so the
+    reported precision/recall/F1/Brier are the ones the deployed model actually
+    produces rather than the ones a discarded intermediate would have.
+
+    The two AUCs stay on the raw `probability` vector deliberately. Both measure
+    ranking only, and calibration is monotonic, so they are identical on either
+    scale — reading them from the column Spark's evaluator already understands
+    avoids re-assembling a vector to compute a number that cannot change.
+    """
+    scored = df if prob_col else with_positive_probability(df)
+    column = prob_col or POSITIVE_PROBABILITY
+    row = confusion_at(scored, [threshold], prob_col=column, label_col=label_col)[0]
     row["fbeta"] = fbeta(row["precision"], row["recall"], beta)
     row["roc_auc"] = area_under(df, "areaUnderROC", label_col)
     row["pr_auc"] = area_under(df, "areaUnderPR", label_col)
-    row["brier"] = brier_score(scored, label_col=label_col)
+    row["brier"] = brier_score(scored, prob_col=column, label_col=label_col)
     return row
