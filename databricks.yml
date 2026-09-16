@@ -22,7 +22,7 @@
 #                           whatever currently carries the @champion alias. Cheap.
 #                           Shipped PAUSED — see the note on the schedule below.
 #
-# 02_eda is deliberately absent from both. It reads Silver and Bronze and writes
+# 03_eda is deliberately absent from both. It reads Silver and Bronze and writes
 # nothing; it is analysis for the reader, not a pipeline stage. Running it on a
 # schedule would burn quota to regenerate charts nobody asked for.
 
@@ -70,7 +70,7 @@ resources:
           depends_on: [{ task_key: bronze }]
           environment_key: serverless_v5
           notebook_task:
-            notebook_path: ./notebooks/03_silver.ipynb
+            notebook_path: ./notebooks/02_silver.ipynb
 
         - task_key: gold
           depends_on: [{ task_key: silver }]
@@ -132,6 +132,17 @@ resources:
           environment_key: serverless_v5
           notebook_task:
             notebook_path: ./notebooks/07_score.ipynb
+
+        # Grades the forecasts whose flights have since landed. Reads the
+        # predictions table and writes prediction_monitoring; costs no API quota
+        # and touches no model, so it is safe to run on every scoring pass. Early
+        # on it will find nothing resolved and say so -- that is the correct
+        # output, not a failure.
+        - task_key: monitor
+          depends_on: [{ task_key: score }]
+          environment_key: serverless_v5
+          notebook_task:
+            notebook_path: ./notebooks/08_monitor.ipynb
 
       schedule:
         quartz_cron_expression: "0 0 6 * * ?"   # 06:00 UTC daily

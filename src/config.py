@@ -32,6 +32,23 @@ FEATURE_MANIFEST = f"{CATALOG}.{SCHEMA}.feature_manifest"
 PREDICTIONS = f"{CATALOG}.{SCHEMA}.flight_delay_predictions"
 ALTERNATIVES = f"{CATALOG}.{SCHEMA}.alternative_flight_recommendations"
 
+# Monitoring: one row per scored flight whose outcome is now known.
+#
+# Not a retraining set, and the distinction is the point. The live path yields a
+# few flights per run on a metered free tier, and they are whichever flights
+# someone typed into a widget -- a biased trickle that would drag a model trained
+# on 2.4M rows toward one route. As *monitoring* the same rows are worth a great
+# deal: they are the only measurement of whether a model calibrated on 2022 still
+# means what it says, and the only evidence that could justify promoting NAS
+# conditions from a caption to a feature.
+MONITORING = f"{CATALOG}.{SCHEMA}.prediction_monitoring"
+
+# Below this many resolved outcomes, report the count and refuse to draw a
+# reliability curve. Ten bins over thirty flights is three flights a bin, and a
+# diagram that unreliable invites exactly the overconfidence this project exists
+# to avoid.
+MONITORING_MIN_SAMPLE = 30
+
 # Volumes
 RAW_VOLUME = f"/Volumes/{CATALOG}/{SCHEMA}/raw"
 ARTIFACT_VOLUME = f"/Volumes/{CATALOG}/{SCHEMA}/artifacts"
@@ -96,7 +113,7 @@ SEARCH_SAMPLE_FRACTION = 0.25  # stage-1 search runs on a sample; winner refits 
 # it has only shown that the point is below the smallest value tried.
 TOP_K_CANDIDATES = [5, 10, 20, 40, 80, 0]   # 0 = keep all features (the control)
 # There is deliberately no TOP_K_FEATURES here. It was a magic 40 that nothing
-# derived and the README should not claim (REVIEW_FINDINGS I1). K is now the
+# derived, and that the README would then have had to claim. K is now the
 # output of the Stage 1 sweep, held in the notebook as SELECTED_K.
 
 # ---------------------------------------------------------------------------
