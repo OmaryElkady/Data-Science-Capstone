@@ -263,17 +263,22 @@ databricks secrets put-secret flights opensky_client_id
 databricks secrets put-secret flights opensky_client_secret
 ```
 
-Run `00_setup` — it makes one live call per API and reports quota. Then `01` → `03` → `04` →
-`05`. `02_eda` reads and writes nothing and can run any time.
+Run `00_setup` - it makes one live call per API and reports quota. Then `01_bronze` -> `02_silver`
+-> `04_gold` -> `05_train`. `03_eda` reads and writes nothing and can run at any point.
 
-For live scoring, `06_api_ingest` takes **two inputs** — a flight number and a date:
+For live scoring, `06_api_ingest` takes **one required input** - a flight number - plus a
+date and two optional tie-breakers:
 
 ```
 FLIGHT_NUMBER   DL1572          (dl1572, DL 1572, DL-1572 all work)
 FLIGHT_DATE     2026-09-14      today is the only date a live aircraft match can succeed
+ORIGIN          ATL             optional - only needed if the number flies >1 leg that day
+DESTINATION     IAH             optional - same
 ```
 
-Origin, destination, times, distance, aircraft and both OpenSky join keys are derived.
+Origin, destination, times, distance, aircraft and both OpenSky join keys are derived from
+the flight number. `ORIGIN`/`DESTINATION` do not cost a call and are not a lookup - they
+only pick between legs the same response already returned. See **Using it** below.
 
 ```bash
 databricks bundle deploy -t dev
@@ -282,6 +287,95 @@ databricks bundle run flight_delay_training -t dev
 
 Training is manual; scoring is scheduled and ships paused, because a live schedule on a
 metered free tier consumes quota whether or not anyone is watching.
+
+---
+
+## Using it
+
+The pipeline answers one question - *will this specific flight arrive 15+ minutes late* - and
+the answer depends on **when you ask relative to the flight**. That is not a quirk of the
+implementation; it is the whole finding. Before pushback nobody knows the departure delay, and
+that single fact is worth 0.30 ROC-AUC.
+
+### Run 06, then 07. Always in that order.
+
+`06_api_ingest` fetches. `07_score` scores what was fetched. `07` on its own re-scores the
+last ingestion, which is useful for re-reading a result and useless for asking about a new
+flight.
+
+### When to run it, and what you get
+
+| When you run `06` + `07` | `dep_delay` | Model used | What you get |
+|---|---|---|---|
+| Days before departure | unknown | pre-departure | The honest forecast: schedule, route, carrier, time of day. **This is the intended use.** |
+| Within a few hours of departure | usually still unknown | pre-departure | Same forecast, plus live FAA airspace conditions for the origin and destination |
+| After pushback, before landing | known | in-flight | A much stronger estimate - the model that knows how late the aircraft actually left |
+| After it lands | known | in-flight | No longer a forecast. The `OUTCOME` block reports whether the earlier call was right |
+
+**So: no, do not wait until the flight has landed.** Landing is when the answer stops being a
+prediction. Run it before departure for the number you can act on; run it again afterwards
+only if you want to see the forecast checked against what happened. `07_score` prints that
+check automatically whenever `arrival_delay` has been filled in, so a second run after arrival
+is how the project closes its own loop - one flight at a time, accumulating in
+`flight_delay_predictions`.
+
+### The API cannot see far ahead
+
+AeroDataBox serves a window around today - a few days back, fewer forward. Outside it, a flight
+number returns no legs and `06` stops with a message naming the date and the number rather than
+writing an empty table. Practically:
+
+- **A date more than a few days out will not resolve.** Ask again closer to the day.
+- **Today is the only date the OpenSky match can succeed.** A live ADS-B snapshot contains
+  aircraft that are moving now; a flight from another day is not in it at all. On any other
+  date the phase comes back `unknown` and everything routes to the pre-departure model, which
+  is correct behaviour, not a failure.
+- **A past date works** and comes back with actual times filled in.
+
+### When the flight is not found
+
+`06` raises with the number and the date rather than guessing. In order of likelihood:
+
+1. **Date outside the provider's window.** Move it nearer to today.
+2. **The number does not operate that day.** Many are not daily.
+3. **Wrong `ORIGIN`/`DESTINATION`.** If the number flies that day but not that leg, the error
+   lists the legs it *does* fly. Clear both widgets to take the next one due to depart.
+
+### Why you give a flight number and not a route
+
+A flight number plus a date identifies a flight; a route does not. `ATL -> IAH` on a Tuesday is
+thirty flights. So the route is **derived** from
+`/flights/number/{number}/{date}`, which returns origin, destination, times, aircraft and both
+OpenSky join keys in a single response - the one call this notebook had to make regardless.
+Deriving the route costs nothing extra, and `06` makes exactly two AeroDataBox calls per run:
+one for the flight, one for the same-route alternatives.
+
+`ORIGIN`/`DESTINATION` exist for one case only. A flight number can operate several legs in a
+day - DL1572 might fly ATL->IAH in the morning and IAH->ATL in the afternoon - and "DL1572
+today" does not say which. Left blank, `06` takes the **next leg due to depart**, which is
+usually what a traveller means. Filled in, they pin the leg outright, and an explicit
+instruction beats the heuristic. They filter legs already returned; they never trigger a
+lookup.
+
+### Reading the output
+
+`07_score` ends with the flight in plain language. Five things to read, in order:
+
+- **`prediction`** - the model's call at its own tuned threshold. Not 0.5: at Spark's default
+  the pre-departure model predicts zero delays and scores F1 = 0.0000.
+- **`vs_route`** - this flight against the median flight on the same route that day. Usually
+  the more actionable of the two. A 25% risk is bad news when the alternatives sit at 12% and
+  simply the price of the route when they sit at 24%.
+- **`AIRSPACE CONDITIONS`** - live FAA NAS status, printed beside the forecast and explicitly
+  **not** a model input. There is no historical archive, so the column cannot be built for
+  2019-2023 and a model that never saw it cannot be scored on it.
+- **`FLIGHTS WITH A BETTER CHANCE`** - same route, within a few hours, codeshares excluded.
+- **`OUTCOME`** - only once the flight has arrived.
+
+One subject per run. `06` stamps an `ingest_run_id` and clears the flag on every earlier row,
+so `is_flight_of_interest` means "the flight being asked about right now" rather than "was
+asked about once". If `07` reports more than one, the table predates that behaviour - re-run
+`06`.
 
 ---
 
