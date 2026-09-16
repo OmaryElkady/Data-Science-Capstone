@@ -84,3 +84,6 @@ column_info.json
 # Kaggle specific files (keep only the notebook code)
 kaggle_workspace/
 *.zip
+
+# OneDrive folder metadata, created wherever this repo syncs
+desktop.ini
