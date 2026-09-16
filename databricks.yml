@@ -22,9 +22,15 @@
 #                           whatever currently carries the @champion alias. Cheap.
 #                           Shipped PAUSED — see the note on the schedule below.
 #
-# 03_eda is deliberately absent from both. It reads Silver and Bronze and writes
-# nothing; it is analysis for the reader, not a pipeline stage. Running it on a
-# schedule would burn quota to regenerate charts nobody asked for.
+# 03_eda and 09_rotation_probe are deliberately absent from both. Neither writes
+# anything; they are analysis for the reader, not pipeline stages, and running
+# them on a schedule would burn quota to regenerate charts nobody asked for.
+#
+# 09 has a second reason. It reads a full-population BTS month from the volume,
+# which is an optional download rather than a pipeline input, so a scheduled run
+# would fail on any workspace where nobody had fetched it. It answers a question
+# that gets asked once -- is the rotation feature worth a twelvefold increase in
+# training data -- and a question asked once does not belong on a cron.
 
 bundle:
   name: flight-delay-platform
