@@ -14,9 +14,9 @@ flights_processed.csv
 eda_outputs/
 outputs/
 results/
-*.png
-*.jpg
-*.jpeg
+# *.png
+# *.jpg
+# *.jpeg
 # Allow evidence screenshots (README + runbook reference these)
 !docs/screenshots/*.png
 !docs/screenshots/*.jpg
