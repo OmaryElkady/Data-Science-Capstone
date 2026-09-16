@@ -11,7 +11,8 @@ Why this exists
 categories, so the position of a column in `VectorAssembler.getInputCols()` is
 *not* its index in the vector. The original feature manifest recorded the
 former and called it `position`, which is correct only for the dense block at
-the front and silently wrong after it (REVIEW_FINDINGS C4).
+the front and silently wrong after it — a magic index into a feature vector is
+how target leakage gets in without anything raising.
 
 Reading the index out of the vector's own `ml_attr` metadata would be the
 obvious alternative, but that metadata does not survive: `04_gold` finishes with

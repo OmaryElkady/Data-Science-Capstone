@@ -1,0 +1,148 @@
+# CI — what can be checked without a cluster, checked on every push.
+#
+# The division of labour matters here, because everything in this project *runs*
+# on Databricks and none of it runs in GitHub Actions.
+#
+#   GitHub Actions  validates the code and the job definitions. No Spark, no
+#                   secrets, no data. Seconds, free, on every commit.
+#   Databricks      executes the notebooks against 2.5M rows of Delta. Hours,
+#                   metered, deliberately triggered.
+#
+# So CI never runs 01-07. It cannot: the notebooks need a Spark session, Unity
+# Catalog, a 3M-row volume and three API secrets. What it *can* do is catch every
+# failure that does not need those — and in this repo that has already included a
+# bundle pointing at a notebook filename that did not exist, which would have
+# failed at deploy time after a human noticed rather than at commit time.
+#
+# `src/*.py` is the testable half by design: pure temporal helpers, API clients
+# and evaluation maths, none of which import a SparkSession at module scope. That
+# is why the test job installs no PySpark and finishes in under a minute.
+
+name: CI
+
+on:
+  push:
+    branches: [main, migration/v2]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install linters
+        run: pip install flake8 nbqa
+
+      - name: flake8 (src, tests)
+        run: flake8 src tests
+
+      # Notebooks are linted with the per-file ignores from .flake8, which allow
+      # the Databricks-specific patterns (`spark`, `dbutils`, `display`) that
+      # would otherwise be undefined-name errors in every single cell.
+      - name: flake8 (notebooks)
+        run: nbqa flake8 notebooks/
+
+  # ---------------------------------------------------------------------------
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # requirements.txt deliberately omits pyspark/mlflow/delta: the Databricks
+      # runtime provides them and pinning them here would fight it. The tests do
+      # not need them either, which is what keeps this job fast.
+      - name: Install
+        run: |
+          pip install -r requirements.txt
+          pip install pytest-cov
+
+      - name: pytest
+        run: pytest -q --cov=src --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.xml
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # Structural checks that are specific to this repo's conventions. A notebook
+  # that parses is not necessarily a notebook that will run: a cell can carry a
+  # stale `config.` constant that was renamed, or lose the contract header the
+  # README promises every notebook has.
+  notebooks:
+    name: Notebook contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Validate notebooks
+        run: python tools/validate_notebooks.py
+
+  # ---------------------------------------------------------------------------
+  # The Databricks-facing job. `bundle validate` parses databricks.yml, resolves
+  # every notebook_path against the working tree and expands variables like
+  # ${workspace.current_user.userName} — which is why it needs a workspace to
+  # authenticate against, and why it is the one job that depends on secrets.
+  #
+  # It deploys nothing. Validation is read-only; it answers "would this deploy?"
+  # without creating a job, so it is safe to run on every commit.
+  #
+  # Skipped rather than failed when DATABRICKS_HOST is absent, so a fork or an
+  # outside PR still gets a green run instead of a red one it cannot fix.
+  bundle:
+    name: Databricks bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for workspace credentials
+        id: creds
+        env:
+          HOST: ${{ secrets.DATABRICKS_HOST }}
+        run: |
+          if [ -n "$HOST" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::DATABRICKS_HOST not set — skipping bundle validation."
+          fi
+
+      - uses: databricks/setup-cli@main
+        if: steps.creds.outputs.available == 'true'
+
+      - name: databricks bundle validate
+        if: steps.creds.outputs.available == 'true'
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: databricks bundle validate -t dev
+
+      # Runs with or without credentials. Catches the specific failure this repo
+      # actually had — a task pointing at ./notebooks/03_silver.ipynb when the
+      # file on disk was 02_silver.ipynb — without needing a workspace at all.
+      - name: Bundle notebook paths resolve
+        run: python tools/validate_bundle_paths.py
