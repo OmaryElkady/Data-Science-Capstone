@@ -56,7 +56,7 @@ different rates, and that one call can answer for thousands of aircraft.
 | Population | Every flight not yet departed | Only flights already airborne |
 
 **The pre-departure model needs no live data at all.** Airline, route, scheduled times,
-distance — all of it is schedule. So are all four congestion features added in `03_silver`:
+distance — all of it is schedule. So are all four congestion features added in `02_silver`:
 departures per origin-hour, bank density, sequence in day, schedule padding.
 
 That last point is a constraint worth making explicit. Those features are computed *across*
@@ -131,7 +131,7 @@ Two ways out, in order of preference:
 2. **Correct the OpenSky observation** by subtracting a per-airport median taxi-out. That
    median is already available — `TAXI_OUT` is one of the 33 columns in Bronze, so it can be
    computed offline from data in hand and broadcast as a small dimension table, exactly like
-   the date dimension in `03_silver`. Cheaper, and approximate; the residual error is the
+   the date dimension in `02_silver`. Cheaper, and approximate; the residual error is the
    variance of taxi-out around its median, which should be reported rather than ignored.
 
 Whichever is chosen, the README should say which delay definition is being served, because
@@ -148,7 +148,7 @@ saving, and the OpenSky filter already reduces the AviationStack volume to depar
 
 Two things not to do:
 
-- **Do not add a weather API.** The `02_eda` §5 decomposition puts extreme weather at 5.8%
+- **Do not add a weather API.** The `03_eda` §5 decomposition puts extreme weather at 5.8%
   of delay minutes. Even crediting weather with all of NAS the ceiling is ~25%, and a
   pre-departure model would have a forecast at inference time rather than the observation it
   was trained on. Late aircraft plus NAS is 57.7% and needs no external data at all.

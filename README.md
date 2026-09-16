@@ -1,5 +1,7 @@
 # Flight Delay Prediction Platform
 
+[![CI](https://github.com/OmaryElkady/Data-Science-Capstone/actions/workflows/ci.yml/badge.svg)](https://github.com/OmaryElkady/Data-Science-Capstone/actions/workflows/ci.yml)
+
 ![Databricks](https://img.shields.io/badge/Databricks-Free%20Edition-FF3621?logo=databricks&logoColor=white)
 ![Delta Lake](https://img.shields.io/badge/Delta%20Lake-Medallion-00ADD8?logo=delta&logoColor=white)
 ![Spark](https://img.shields.io/badge/Spark%20ML-3.5-E25A1C?logo=apachespark&logoColor=white)
@@ -79,12 +81,13 @@ predicts **zero** delays and scores **F1 = 0.0000**.
 | Layer | Notebook | Writes | Row count |
 |---|---|---|---|
 | Bronze | `01_bronze` | `bronze_flights` | 3,000,000 |
-| Silver | `03_silver` | `silver_flights` | 2,520,650 |
+| Silver | `02_silver` | `silver_flights` | 2,520,650 |
 | Gold | `04_gold` | `gold_ml_features`, `feature_manifest` | 2,463,979 / 816 |
 | Training | `05_train` | 2 UC models + `@champion` aliases | — |
 | Ingest | `06_api_ingest` | `api_silver_flights`, `opensky_states` | per run |
 | Scoring | `07_score` | `flight_delay_predictions`, `alternative_flight_recommendations` | per run |
-| EDA | `02_eda` | nothing — analysis only | — |
+| Monitoring | `08_monitor` | `prediction_monitoring` | resolved forecasts |
+| EDA | `03_eda` | nothing — analysis only | — |
 
 ---
 
@@ -161,7 +164,7 @@ nothing.
 
 ## What the EDA decided
 
-`02_eda` sizes each opportunity before anything is built.
+`03_eda` sizes each opportunity before anything is built.
 
 **Delay causes**, over 489,792 delayed flights and 33,315,131 delay minutes:
 
@@ -251,6 +254,43 @@ tested against the shape the APIs actually return.
 
 ---
 
+## CI
+
+[![CI](https://github.com/OmaryElkady/Data-Science-Capstone/actions/workflows/ci.yml/badge.svg)](https://github.com/OmaryElkady/Data-Science-Capstone/actions/workflows/ci.yml)
+
+Everything here *runs* on Databricks. Nothing runs in GitHub Actions, and the split is
+deliberate:
+
+| | GitHub Actions | Databricks |
+|---|---|---|
+| Checks | code, notebook structure, job definitions | the actual pipeline |
+| Needs | nothing | Spark, Unity Catalog, a 3M-row volume, three API secrets |
+| Cost | free, every commit | metered, deliberately triggered |
+| Time | under a minute | minutes to hours |
+
+CI therefore never executes `01`-`08`. It cannot. What it can do is catch every failure that
+does not need a cluster, and four jobs do that:
+
+- **Lint** - `flake8` on `src/` and `tests/`, `nbqa flake8` on the notebooks
+- **Unit tests** - 136 tests with coverage. `src/*.py` holds no module-level `SparkSession`,
+  by design, which is what lets the suite run without installing PySpark
+- **Notebook contracts** - `tools/validate_notebooks.py`: every cell parses, every
+  `config.X` resolves, every notebook carries its contract header, and no cell reads a name
+  that no earlier cell binds
+- **Databricks bundle** - `databricks bundle validate` when workspace credentials are
+  present, plus `tools/validate_bundle_paths.py`, which needs none
+
+That last check exists because the bundle really did break. The notebooks were renumbered,
+`databricks.yml` kept pointing its silver task at `./notebooks/03_silver.ipynb`, and
+`databricks bundle deploy` - the command this README tells you to run - failed. The
+credential-free half of the check catches that on a fork, on an outside PR, and on any clone
+without a Databricks account.
+
+The test suite is Spark-free for the same reason the notebooks are not run here: a CI job
+that needs a cluster is a CI job nobody keeps green.
+
+---
+
 ## Reproducing
 
 **Prerequisites:** Databricks Free Edition, serverless environment version 5 (required for
@@ -280,13 +320,43 @@ Origin, destination, times, distance, aircraft and both OpenSky join keys are de
 the flight number. `ORIGIN`/`DESTINATION` do not cost a call and are not a lookup - they
 only pick between legs the same response already returned. See **Using it** below.
 
+### Jobs are defined in code, not in the UI
+
+`databricks.yml` is a Databricks Asset Bundle, and it is the source of truth for both jobs.
+Deploying it creates them in the workspace, where they behave exactly like jobs built by
+clicking: they appear under **Jobs & Pipelines**, run from the UI, and show the same run
+history and task graph. The difference is where the definition lives - a job built in the
+form exists only in one workspace, cannot be reviewed, and cannot be validated by CI.
+
 ```bash
-databricks bundle deploy -t dev
+pip install databricks-cli          # or: brew install databricks/tap/databricks
+databricks auth login --host https://<your-workspace>.cloud.databricks.com
+
+databricks bundle validate -t dev   # parses, resolves every notebook_path
+databricks bundle deploy   -t dev   # creates/updates both jobs in the workspace
+```
+
+The jobs then appear as `[dev <your-username>] flight-delay-training` and
+`[dev <your-username>] flight-delay-scoring`. Run them from the UI, or:
+
+```bash
 databricks bundle run flight_delay_training -t dev
 ```
 
-Training is manual; scoring is scheduled and ships paused, because a live schedule on a
-metered free tier consumes quota whether or not anyone is watching.
+**What `mode: development` does for you.** It prefixes job names so a deploy cannot collide
+with anything else in the workspace, and it force-pauses every schedule. The scoring job is
+declared `PAUSED` as well, deliberately: a live schedule on a metered free tier consumes
+quota every morning whether or not anyone is watching.
+
+**One gotcha worth knowing.** `bundle deploy` uploads the notebooks from your *local working
+tree* to a bundle-managed workspace path, and the deployed job runs that copy - not the
+Databricks Git folder you edit in. So the loop is: edit in the Git folder, commit and push
+from there, `git pull` locally, then `bundle deploy`. Skipping the pull deploys whatever your
+local checkout last had. (A job can instead be pointed at a `git_source` so it pulls the
+branch at run time, which removes the step at the cost of making every run depend on GitHub.)
+
+Training is manual and expensive - a full `05_train` run is a 25-trial TPE search plus blocked
+CV on ~1.3M rows. Scoring is cheap and its schedule ships paused.
 
 ---
 
@@ -376,6 +446,42 @@ One subject per run. `06` stamps an `ingest_run_id` and clears the flag on every
 so `is_flight_of_interest` means "the flight being asked about right now" rather than "was
 asked about once". If `07` reports more than one, the table predates that behaviour - re-run
 `06`.
+
+---
+
+## Monitoring, and why it is not retraining
+
+`08_monitor` grades forecasts against outcomes. A prediction resolves when the flight lands
+and a later run of `06` re-fetches it, filling in `arrival_delay`; `08` joins the two and
+writes `prediction_monitoring`.
+
+**It is deliberately not a retraining loop.** The obvious move is to accumulate live rows and
+feed them back into Gold. The numbers say not to. AeroDataBox's free tier is 400 units a
+month and `06` spends two calls a run, so the live path yields a handful of flights per run
+against **2,463,979** Gold rows - adding one percent to the training set would take years.
+
+Volume is not even the binding objection. Those rows are whichever flights someone typed into
+a widget, so they are a biased sample of one or two routes. Retraining on them would pull the
+model toward those routes and report it as improvement. Measuring that and declining to build
+it is the result.
+
+The same rows answer three questions that nothing else in this repo can, because every other
+evaluation here is against a held-out slice of the same 2019-2023 extract:
+
+1. **Is it still calibrated?** The isotonic stage was fitted on 2022 and confirmed on 2023.
+   Calibration is a property of a distribution, not of a model, and distributions move.
+2. **Which cut was right?** The F1 and advisory thresholds disagree by construction. With
+   outcomes the disagreement becomes scorable.
+3. **Does it fail when the NAS is degraded?** `07` records FAA conditions at prediction time
+   and the model has never seen them. If misses concentrate under active conditions, that is
+   the evidence for collecting NAS history and building the feature. If they do not, the
+   caption stays a caption - and that is equally a result.
+
+`08` reports per variant and never pools them: re-scoring a flight after pushback replaces
+the pre-departure forecast with an in-flight one, and pooling would credit the 0.63 model
+with the 0.93 model's accuracy. Below `MONITORING_MIN_SAMPLE` resolved flights it prints the
+count and **refuses to draw a reliability diagram**, because one drawn on eight flights looks
+exactly as authoritative as one drawn on eight thousand.
 
 ---
 
