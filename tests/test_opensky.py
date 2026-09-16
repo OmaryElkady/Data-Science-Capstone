@@ -227,6 +227,7 @@ def test_conus_bbox_is_well_formed():
     # returns an empty airspace rather than an error.
     assert CONUS_BBOX["lomin"] < 0 and CONUS_BBOX["lomax"] < 0
 
+
 class TestDeriveSchedule:
     """OpenSky publishes no timetable, so one is derived from observed departures.
 
