@@ -150,6 +150,13 @@ Isotonic regression, fitted on 2022 and applied to 2023:
 ROC-AUC cannot move: isotonic regression is monotonic, so it corrects confidence without
 reordering anything.
 
+The calibrator is a *stage of the registered model*, not a measurement beside it. `05_train`
+appends it to the champion's own fitted stages and registers the combined pipeline, so the
+artifact in Unity Catalog serves `p_calibrated` and `07_score` reads that column. The
+decision threshold is selected on the same scale, before any metric is reported: choosing a
+cut against raw scores and then serving remapped ones is wrong on every row and raises
+nothing.
+
 ---
 
 ## What the EDA decided
@@ -297,9 +304,11 @@ Christmas peaks.
 **Base-rate drift.** 18.23% delayed in the CV window against 23.03% in the test year, `+4.80`
 points. Some of the test-set degradation is distribution shift rather than overfitting.
 
-**Calibration is improved but imperfect.** 0.0247 largest bin deviation after isotonic. The
-calibrator is measured but not yet logged with the model, so `07_score` still serves raw
-probabilities.
+**Calibration is improved but imperfect.** 0.0247 largest bin deviation after isotonic -
+better than the raw model and not zero. The calibrator and the decision threshold are both
+fitted on the 2022 window, so the selection sweep is in-sample for the calibration step;
+the 2023 evaluation is the only clean measurement of either, which is why it is the one
+reported.
 
 **Live gate-delay data is a paid product.** This runs on free tiers: AeroDataBox's free plan
 is metered at 400 API units per month, and OpenSky's coverage is community ADS-B. Codeshares
@@ -314,9 +323,7 @@ Ranked by the decomposition rather than by interest. Derived congestion features
 late aircraft plus NAS is 57.7% of delay minutes and needs no new data. Aircraft rotation
 chaining would be the strongest addition available, but `TAIL_NUM` is absent from this
 extract, so `dep_sequence_in_day` is the closest proxy. Time-aware route target encoding
-would replace ~800 one-hot columns with a handful of dense rates. Logging the isotonic
-calibrator with the model would close the gap between measured and served probabilities.
-Weather last, if at all, at 5.8% of delay minutes and with forecast-versus-observation skew.
+would replace ~800 one-hot columns with a handful of dense rates. Weather last, if at all, at 5.8% of delay minutes and with forecast-versus-observation skew.
 
 ---
 
