@@ -1,0 +1,39 @@
+# nbqa configuration only. This repo is not a installable package: dependencies
+# live in requirements.txt, flake8 config in .flake8, pytest config in pytest.ini.
+#
+# Why this file has to exist
+# --------------------------
+# `.flake8` carries a `per-file-ignores` entry for `*.ipynb` listing the codes
+# that are meaningless in a Databricks notebook -- F821 for `spark` and `dbutils`,
+# which the runtime injects rather than importing; E402 because every notebook
+# has cells above its imports; F401 because a cell may import for a later cell.
+#
+# That entry never matched anything. nbqa works by converting each notebook to a
+# temporary `.py` file and running flake8 on *that*, so the file flake8 sees is
+# never named `*.ipynb` and the pattern cannot fire. The result was ~200
+# violations on a first CI run, all of them noise, from a config written
+# specifically to suppress exactly those.
+#
+# Putting the codes here instead makes `nbqa flake8 notebooks/` behave the same
+# on a laptop as it does in CI, which is the property that matters: a lint rule
+# that only fails in CI gets disabled rather than fixed.
+#
+# Two more are notebook idioms rather than defects:
+#
+#   E702  `plt.tight_layout(); plt.show()` closes every chart in this project.
+#         Two statements, one visual act, used consistently in ten places.
+#   C901  cyclomatic complexity is a heuristic for functions you intend to test.
+#         A cell that prints a formatted report branches a lot by nature, and
+#         splitting it to satisfy a metric would make it harder to read, not
+#         easier. `src/` is still held to max-complexity=10 via .flake8.
+#
+# What is deliberately still checked: real indentation and continuation errors,
+# comparison bugs (F632), and syntax. The undefined-name analysis that actually
+# means something for these notebooks -- cell-ordered, aware of the Databricks
+# globals -- lives in tools/validate_notebooks.py, which knows things flake8
+# structurally cannot.
+
+[tool.nbqa.addopts]
+flake8 = [
+    "--extend-ignore=F821,F541,E722,E402,E712,F401,F402,F601,F841,E266,E702,C901",
+]

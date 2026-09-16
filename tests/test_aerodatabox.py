@@ -5,7 +5,7 @@ shape the API actually returns rather than one invented to match the parser.
 """
 
 import json
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
