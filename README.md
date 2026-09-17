@@ -542,9 +542,9 @@ does, and the schedule barely proxies it.
 **The source is a ~10% extract, and it costs more than volume.** 3M rows against roughly
 26M real BTS movements for these years. Counting co-occurring flights in a sample counts
 *sampled* flights, which is why the congestion features are expressed as shares: a ratio
-survives uniform sampling and a count does not. `09_rotation_probe` measures the size of that
-distortion on one month of full-population data — see below. The sample also drops `TAIL_NUM`
-entirely, which is what puts the largest single delay cause out of reach.
+survives uniform sampling and a count does not. The sample also drops `TAIL_NUM`, which puts
+aircraft rotation out of reach — `09_rotation_probe` buys one month of the full population to
+measure what that costs, and finds the answer is less than it looks. See **Future work**.
 
 **The test year is 8 months.** 2023-01-01 to 2023-08-31, missing the Thanksgiving and
 Christmas peaks.
@@ -579,16 +579,16 @@ three alternatives to itself.
 
 ## Future work
 
-### Aircraft rotation — measured, costed, and not built
+### Aircraft rotation — measured, and mostly explained away
 
 Late aircraft is **38.4% of delay minutes**, the largest single cause, and the feature that
-would capture it needs `TAIL_NUM`, which this extract does not have. That was an unmeasured
-claim for as long as this README existed. `09_rotation_probe` settles it on one month of
+would capture it needs `TAIL_NUM`, which this extract does not have. The README carried
+"aircraft rotation chaining would be the strongest addition available" as an *unmeasured*
+claim for as long as it existed. `09_rotation_probe` settles it on one month of
 full-population BTS data, downloaded with `tools/fetch_bts.py`, without retraining anything.
 
 **Scheduled turnaround** — the gap between the previous leg's scheduled arrival and this
-leg's scheduled departure, same airframe — separates delay rates further than any feature
-currently in the model:
+leg's scheduled departure, same airframe — looked like the strongest signal in the project:
 
 | Scheduled turnaround | Arrived 15+ min late |
 |---|---|
@@ -596,22 +596,43 @@ currently in the model:
 | over 120 min | **23.28%** |
 | *spread* | ***+31.2pp (2.34×)*** |
 
-For scale, hour of day — the strongest feature the model currently has — spans 8.5% to 28.1%,
-a spread of 19.6pp. On 386,017 paired legs from January 2023, with 0% missing tail numbers.
+Hour of day, the strongest feature the model currently has, spans 8.5% to 28.1% — a spread of
+19.6pp. On 386,017 paired legs from January 2023 with no missing tail numbers, turnaround
+separated *further* than that.
 
-It is **schedule-only**, so it is knowable days ahead and carries no leakage. The inbound
-aircraft's *actual* arrival delay is the stronger signal and is deliberately excluded: it is
-not available before pushback, so a model trained on it would be served without it.
+**Then it was checked, and most of it went away.** Tight turns are not assigned at random:
+airlines schedule them at hubs, on short-haul routes, and inside the afternoon and evening
+banks. Holding departure hour fixed and comparing tight (<45 min) against loose (≥90 min)
+turns *within* each hour:
 
-**Why it is not built.** The full BTS table is roughly **twelve times** the rows — about 29M
-across these four years against 2,463,979 in Gold. `05_train` already runs about ten hours on
-Databricks Free Edition. That is not a feature addition on this platform, and the probe was
-built so the decision could be made on evidence rather than on the ten hours.
+| Within-hour gap, tight minus loose | |
+|---|---|
+| Hours where tight turns are worse | **12 of 17** |
+| Median gap | **+4.2pp** |
+| Range | **−9.3pp to +22.8pp** |
 
-Two secondary results fall out of the same month. The aircraft's leg number that day separates
-only 20.86% to 26.13%, so the carrier-level `dep_sequence_in_day` proxy already in Gold was
-not missing much. And the sampling distortion the share features exist to route around is
-visible at hubs rather than in a global mean, where small airports dominate.
+Roughly seven eighths of the headline spread was hour of day wearing a different hat. What
+survives is a median of about four points — real, consistently signed in most hours, reversing
+in five of them, and smaller than the 19.6pp the model already gets from `dep_hour` alone. It
+is comparable to the aircraft's leg number that day, which moves delay rates only from 20.86%
+to 26.13%, and which Gold already approximates with the carrier-level `dep_sequence_in_day`.
+
+**So it is not built, and the reason is now evidence rather than cost.** The full BTS table is
+about **twelve times** the rows — roughly 29M across these four years against 2,463,979 in Gold
+— and `05_train` already runs about ten hours on Databricks Free Edition. Paying that for a
+four-point residual on a feature largely collinear with one the model already has is not a
+trade worth making. Had the probe come back the other way, the arithmetic would have been
+worth doing.
+
+The probe cost a 232 MB download and two minutes of Spark. That is the argument for building
+the cheap measurement before the expensive feature.
+
+**One secondary result worth keeping.** The sampling distortion the share features exist to
+route around is invisible in a global mean — 6.5 departures per origin-hour on full data
+against 3.3 on the sample — because most origin-hours belong to small airports with one or two
+departures and they dominate an unweighted average on either dataset. At the hubs the claim
+was actually about, the busiest single origin-hour carries **84 departures**, which a tenth of
+the data would show as about 8. The global mean was the wrong statistic to have quoted.
 
 ### The rest
 
