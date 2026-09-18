@@ -26,6 +26,16 @@
 #         A cell that prints a formatted report branches a lot by nature, and
 #         splitting it to satisfy a metric would make it harder to read, not
 #         easier. `src/` is still held to max-complexity=10 via .flake8.
+#   W291  trailing whitespace, and W293 the same on a blank line. The Databricks
+#   W293  notebook editor writes these back into cell sources on save, so they
+#         reappear every time a notebook is run in the workspace and committed
+#         from the Git folder -- which is the only way notebook outputs reach
+#         GitHub at all. They broke CI once already, on a commit whose only
+#         content was a notebook re-run. A rule that the tool you are required to
+#         use violates mechanically, and that means nothing when violated, is a
+#         rule that gets switched off eventually; switching it off deliberately
+#         and writing down why is the honest version of that. `src/` and `tests/`
+#         are still held to it, where a human types every character.
 #
 # What is deliberately still checked: real indentation and continuation errors,
 # comparison bugs (F632), and syntax. The undefined-name analysis that actually
@@ -35,7 +45,7 @@
 
 [tool.nbqa.addopts]
 flake8 = [
-    "--extend-ignore=F821,F541,E722,E402,E712,F401,F402,F601,F841,E266,E702,C901",
+    "--extend-ignore=F821,F541,E722,E402,E712,F401,F402,F601,F841,E266,E702,C901,W291,W293",
 ]
 
 # Restored from main, which migration/v2 had dropped along with its
