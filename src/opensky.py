@@ -26,15 +26,21 @@ departure delay. OpenSky observes when an airframe stops being `on_ground`, whic
 is **wheels-off**. The two differ by taxi-out time — minutes at a small field,
 far more at a congested hub — so deriving delay from OpenSky would inject a bias
 that is worst exactly where delay matters most, and would do it silently.
-AviationStack's `departure.delay` is already on gate semantics, so it is the
-value that gets served. See `docs/API_STRATEGY.md`.
+AeroDataBox's `revisedTime - scheduledTime` is already on gate semantics, so it
+is the value that gets served.
 
 Joining the two
 ---------------
-AviationStack returns `flight.icao` (e.g. `"DAL1234"`). OpenSky broadcasts
-`callsign` in the same ICAO form, space-padded (e.g. `"DAL1234 "`). After
-stripping, they are directly comparable — no IATA-to-ICAO mapping table is
-needed, because AviationStack supplies the ICAO form itself.
+AeroDataBox returns `callSign` (e.g. `"DAL1234"`) and `aircraft.modeS` (e.g.
+`"A34729"`). OpenSky broadcasts `callsign` in the same ICAO form, space-padded
+(e.g. `"DAL1234 "`), and keys its state vectors on `icao24`, which is the same
+24-bit airframe address as `modeS`. After stripping and case-folding both are
+directly comparable — no IATA-to-ICAO mapping table is needed, because the
+provider supplies both identifiers itself.
+
+The airframe address is the stronger of the two joins and is tried first:
+codeshares share a flight number but not an aeroplane, and a flight number
+recurs daily while an airframe address does not.
 """
 
 from __future__ import annotations
