@@ -107,6 +107,30 @@ class TestFlightToRow:
         # 16:17Z -> 18:22Z is 125 minutes.
         assert flight_to_row(flight_payload[0])["crs_elapsed_time"] == 125.0
 
+    def test_distance_is_in_miles_because_bts_distance_is(self, flight_payload):
+        """`distance` is a model feature, and the model learned it in miles.
+
+        This asserts the unit rather than merely a number. Reading `km` out of
+        the response put 1109.11 in a column trained on 689.17 -- a plausible
+        value in the right column describing a flight to somewhere else, which
+        nothing downstream could detect.
+        """
+        row = flight_to_row(flight_payload[0])
+        assert row["distance"] == pytest.approx(689.17)
+        assert row["distance"] != pytest.approx(1109.11)
+
+    def test_distance_converts_when_the_provider_offers_only_km(self, flight_payload):
+        payload = json.loads(json.dumps(flight_payload[0]))
+        payload["greatCircleDistance"] = {"km": 1109.11}
+        assert flight_to_row(payload)["distance"] == pytest.approx(689.17, abs=0.01)
+
+    def test_distance_is_none_rather_than_zero_when_absent(self, flight_payload):
+        # Zero is a claim about a real flight of no length. None says "unknown",
+        # which is what lets 07_score substitute the route's true distance.
+        payload = json.loads(json.dumps(flight_payload[0]))
+        payload["greatCircleDistance"] = {}
+        assert flight_to_row(payload)["distance"] is None
+
     def test_fl_number_is_numeric_only(self, flight_payload):
         row = flight_to_row(flight_payload[0])
         assert row["fl_number"] == 1572
@@ -274,6 +298,29 @@ class TestDepartureToRow:
                             for d in airport_payload["departures"]) if r]
         to_iah = [r for r in rows if r["destination_airport_code"] == "IAH"]
         assert len(to_iah) == 2, "recorded window held exactly two ATL->IAH departures"
+
+    def test_the_arrival_half_is_unknown_and_says_so(self, airport_payload):
+        """The airport endpoint returns departures, so arrival fields are None.
+
+        This is the reason 07_score reconstructs `distance`, `crs_elapsed_time`
+        and `crs_arr_time` from Silver instead of taking them at face value. All
+        three are model features, and letting `na.fill(0)` reach them scored
+        every alternative as a zero-mile, zero-minute flight arriving at
+        midnight -- which is how four alternatives departing in three different
+        hours all came back at exactly 21.5%.
+
+        If this test ever fails because the provider started returning an
+        arrival block, the reconstruction in 07 becomes unnecessary rather than
+        wrong: it coalesces, so a real value would win.
+        """
+        rows = [r for r in (departure_to_row(d, "ATL")
+                            for d in airport_payload["departures"]) if r]
+        assert rows, "fixture produced no rows"
+        for r in rows:
+            assert r["crs_arr_time"] is None
+            assert r["crs_elapsed_time"] is None
+            assert r["distance"] is None
+            assert r["arrival_delay"] is None
 
 
 class TestClientConstruction:
