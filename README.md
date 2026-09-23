@@ -8,7 +8,7 @@
 ![MLflow](https://img.shields.io/badge/MLflow-3.8-0194E2?logo=mlflow&logoColor=white)
 ![Unity Catalog](https://img.shields.io/badge/Unity%20Catalog-%40champion-1B3139)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-136%20passing-success)
+![Tests](https://img.shields.io/badge/tests-140%20passing-success)
 
 A Bronze→Silver→Gold Delta pipeline over 3M BTS flight records, feeding two Spark ML models
 registered in Unity Catalog and served against live flights from two APIs.
@@ -261,6 +261,20 @@ under a fifth of a standard deviation would be registering noise.
 a Delta round-trip — confirmed empirically. `04_gold` writes one row per vector slot and
 `05_train` reads it, so a magic index cannot drift into target leakage.
 
+**The same ruler on both sides.** BTS `DISTANCE` is statute miles, and AeroDataBox reports the
+same quantity in metres, kilometres, miles and nautical miles at once. Reading the wrong field
+raises nothing: it puts a plausible number in the right column describing a different flight.
+ATL-IAH is 689 miles and 1,109 km, and a model trained on miles reads 1,109 as a flight about
+as long as Atlanta to Denver. Units are part of the feature contract, and the unit test pins
+them.
+
+**A flight is identified by the flight.** Carrier, number, date and route — not the day you
+asked. A flight number is not a flight: DL1572 can fly ATL->IAH in the morning and IAH->ATL in
+the afternoon, and a key without the route silently merges them. A key with the *scoring run's*
+date has the opposite failure: the forecast and the outcome land on separate rows, because
+almost any flight worth grading lands on a different calendar day from the one its forecast was
+made on.
+
 **Two APIs, by phase.** AeroDataBox answers *how late* on gate semantics — the same quantity
 BTS records as `DEP_DELAY`. OpenSky answers *where and what phase*: one call returned 7,540
 aircraft, and `on_ground` is the split the two models need. Deriving delay from ADS-B would
@@ -360,9 +374,16 @@ ORIGIN          ATL             optional - only needed if the number flies >1 le
 DESTINATION     IAH             optional - same
 ```
 
-Origin, destination, times, distance, aircraft and both OpenSky join keys are derived from
-the flight number. `ORIGIN`/`DESTINATION` do not cost a call and are not a lookup - they
-only pick between legs the same response already returned. See **Using it** below.
+Origin, destination, times, distance (in statute miles, matching BTS), aircraft and both
+OpenSky join keys are derived from the flight number. `ORIGIN`/`DESTINATION` do not cost a
+call and are not a lookup - they only pick between legs the same response already returned.
+See **Using it** below.
+
+The live tables are disposable. `api_silver_flights`, `flight_delay_predictions`,
+`alternative_flight_recommendations` and `prediction_monitoring` are all rebuilt by `06` →
+`07` → `08`, which create them if they are absent. Dropping them costs one ingestion and no
+retraining: Bronze, Silver, Gold, the feature pipeline and the registered models are
+untouched by the live path.
 
 ### Jobs are defined in code, not in the UI
 
@@ -433,6 +454,13 @@ check automatically whenever `arrival_delay` has been filled in, so a second run
 is how the project closes its own loop - one flight at a time, accumulating in
 `flight_delay_predictions`.
 
+**The second run can be any day.** A forecast is keyed on the flight - carrier, number, date
+and route - and not on the day it was made, so the outcome lands on the row that already holds
+the forecast however long you leave it. That row is then frozen: the outcome pass writes the
+observations and leaves the probability, the thresholds, the model versions and the recorded
+airspace conditions exactly as they were. A forecast is a claim made at a moment, and grading
+it means keeping both halves of the same row.
+
 ### The API cannot see far ahead
 
 AeroDataBox serves a window around today - a few days back, fewer forward. Outside it, a flight
@@ -471,6 +499,13 @@ usually what a traveller means. Filled in, they pin the leg outright, and an exp
 instruction beats the heuristic. They filter legs already returned; they never trigger a
 lookup.
 
+**`06` remembers which leg it chose.** Grading a forecast takes two runs separated by the
+flight itself, and "next to depart" is re-evaluated every time - so on the second run it would
+pick the *following* leg, and the flight being waited on would never be re-fetched. Instead,
+a run for a number and date that `api_silver_flights` already holds re-selects the leg it
+designated then. Nothing to remember, nothing to re-type, and `ORIGIN`/`DESTINATION` still
+override it.
+
 ### Reading the output
 
 `07_score` ends with the flight in plain language. Five things to read, in order:
@@ -485,7 +520,13 @@ lookup.
 - **`AIRSPACE CONDITIONS`** - live FAA NAS status, printed beside the forecast and explicitly
   **not** a model input. There is no historical archive, so the column cannot be built for
   2019-2023 and a model that never saw it cannot be scored on it.
-- **`FLIGHTS WITH A BETTER CHANCE`** - same route, within a few hours, codeshares excluded.
+- **`FLIGHTS WITH A BETTER CHANCE`** - same route, within a few hours, codeshares excluded,
+  and **only flights that have not departed yet**. The search window is symmetric, so half of
+  what it returns left before the flight being asked about; an earlier flight you can still
+  catch is a good alternative, one that left three hours ago is not an alternative at all.
+  Both sides are compared on the **pre-departure** model, because choosing between flights
+  means you have boarded neither. Each line says how much earlier or later you would travel,
+  and flags an alternative that has already pushed back late.
 - **`OUTCOME`** - only once the flight has arrived.
 
 One subject per run. `06` stamps an `ingest_run_id` and clears the flag on every earlier row,
@@ -523,11 +564,18 @@ evaluation here is against a held-out slice of the same 2019-2023 extract:
    the evidence for collecting NAS history and building the feature. If they do not, the
    caption stays a caption - and that is equally a result.
 
-`08` reports per variant and never pools them: re-scoring a flight after pushback replaces
-the pre-departure forecast with an in-flight one, and pooling would credit the 0.62 model
-with the 0.93 model's accuracy. Below `MONITORING_MIN_SAMPLE` resolved flights it prints the
-count and **refuses to draw a reliability diagram**, because one drawn on eight flights looks
-exactly as authoritative as one drawn on eight thousand.
+`08` reports per variant and never pools them. Which model made a call depends on the phase
+the aircraft was in when it was made, so a pool mixes them, and pooling would credit the 0.62
+model with the 0.93 model's accuracy. Below `MONITORING_MIN_SAMPLE` resolved flights it prints
+the count and **refuses to draw a reliability diagram**, because one drawn on eight flights
+looks exactly as authoritative as one drawn on eight thousand.
+
+It also separates what is waiting from what is not. Only the flight of interest can ever
+resolve: alternatives come from the airport-departures endpoint, which returns the departure
+half of a movement and no arrival time at all, so their `arrival_delay` is null permanently.
+They are route context, not forecasts, and counting them as "outstanding" described a queue
+that would never drain. A cancelled flight is the other kind - it has an outcome, and that
+outcome is neither on time nor late, so the 15-minute rule cannot grade it either.
 
 ---
 
@@ -574,6 +622,20 @@ alternative and was not run.
 is metered at 400 API units per month, and OpenSky's coverage is community ADS-B. Codeshares
 are filtered because one aircraft sold under three flight numbers would otherwise appear as
 three alternatives to itself.
+
+**An alternative's block time is estimated, not observed.** The airport-departures endpoint
+returns the departure half of a movement, so an alternative arrives with no arrival time and
+no distance. Distance is recovered exactly - a great-circle distance is a property of the pair
+of airports, and Silver knows it - but block time is the route's four-year median, and the
+arrival clock follows from it. Real block times vary by aircraft and season. The flight of
+interest is unaffected: it comes from a different endpoint that reports both. `07` prints how
+many rows it reconstructed rather than leaving the substitution implicit.
+
+**`dep_sequence_in_day` is substituted, not counted.** It is a flight's ordinal position among
+its carrier's departures from an airport that day, and the live feed returns one route rather
+than a whole airport-day, so it cannot be counted at serve time. It is taken from Silver by
+origin and hour, which puts it on the scale the model learned. That is an approximation for
+the same reason the congestion shares are.
 
 ---
 
