@@ -161,7 +161,7 @@ THRESHOLD_GRID = (
 # AviationStack was the original live-data source. It is gone rather than
 # deprecated: its plan returned schedules roughly two weeks old, which makes
 # matching against a live ADS-B snapshot impossible rather than merely lossy.
-# AeroDataBox replaced it — see docs/API_STRATEGY.md for the measurements.
+# AeroDataBox replaced it.
 
 # ---------------------------------------------------------------------------
 # OpenSky Network (live aircraft state)
@@ -169,8 +169,8 @@ THRESHOLD_GRID = (
 # Supplies the ground/air phase split in bulk: one /states/all call returned
 # 8,166 aircraft over the continental US, of which 2,893 carried callsigns
 # belonging to carriers present in the BTS data. Credentials are OAuth2 client
-# credentials and live in the same secret scope as the AviationStack key —
-# never in this file, which is public. See docs/API_STRATEGY.md.
+# credentials and live in the same secret scope as the AeroDataBox key —
+# never in this file, which is public.
 OPENSKY_SECRET_SCOPE = "flights"
 OPENSKY_CLIENT_ID_KEY = "opensky_client_id"
 OPENSKY_CLIENT_SECRET_KEY = "opensky_client_secret"
@@ -210,3 +210,15 @@ ALTERNATIVE_SEARCH_HOURS = 4
 ALTERNATIVE_MIN_IMPROVEMENT_PCT = 3.0
 ALTERNATIVE_WINDOW_MINUTES = 240   # +/- 4 hours around the flight of interest
 ALTERNATIVE_TOP_N = 5
+
+# How long before departure an alternative stops being one.
+#
+# The search window is symmetric, so half of what it returns departed before the
+# flight being asked about. An earlier flight is a perfectly good alternative --
+# if you can still catch it. One that left three hours ago is not an alternative
+# at all, and the recommender was offering them: "instead of DL1131 at 16:25,
+# consider DL1223 at 14:47", printed at 18:15, about a flight long gone.
+#
+# So the test is against the clock, not against the original's departure time,
+# with enough lead to rebook and reach the gate.
+ALTERNATIVE_MIN_LEAD_MINUTES = 60
