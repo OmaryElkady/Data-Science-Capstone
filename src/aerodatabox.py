@@ -193,6 +193,33 @@ def _delay_minutes(scheduled: Optional[datetime], revised: Optional[datetime]) -
     return (revised - scheduled).total_seconds() / 60.0
 
 
+# BTS records DISTANCE in statute miles, so that is the scale both models learned
+# `distance` on. AeroDataBox returns the same quantity in several units at once.
+_KM_TO_MILES = 0.621371
+
+
+def _distance_miles(block: Optional[dict]) -> Optional[float]:
+    """Great-circle distance in statute miles — the unit BTS DISTANCE uses.
+
+    This used to read `km` straight out of the response, which is the same
+    quantity measured with a different ruler. ATL->IAH is 689 miles and 1109 km,
+    and a model trained on miles reads 1109 as a flight about as long as Atlanta
+    to Denver. Nothing raises: the value is a plausible number in the right
+    column, just describing a different flight, on every live prediction the
+    project has ever made.
+
+    The provider supplies `mile` alongside `km`, so prefer it and convert only
+    when it is absent.
+    """
+    if not block:
+        return None
+    mile = block.get("mile")
+    if mile is not None:
+        return float(mile)
+    km = block.get("km")
+    return None if km is None else float(km) * _KM_TO_MILES
+
+
 def flight_to_row(flight: dict) -> Optional[dict]:
     """One AeroDataBox flight -> one row of the Silver contract.
 
@@ -275,7 +302,7 @@ def flight_to_row(flight: dict) -> Optional[dict]:
         "crs_dep_time": crs_dep,
         "crs_arr_time": crs_arr,
         "crs_elapsed_time": elapsed,
-        "distance": (flight.get("greatCircleDistance") or {}).get("km"),
+        "distance": _distance_miles(flight.get("greatCircleDistance")),
         "dep_delay": dep_delay,
         "arrival_delay": arr_delay,
         "flight_status": flight.get("status"),
