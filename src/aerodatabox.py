@@ -220,6 +220,46 @@ def _distance_miles(block: Optional[dict]) -> Optional[float]:
     return None if km is None else float(km) * _KM_TO_MILES
 
 
+# What the provider's `status` licenses us to believe.
+#
+# This is the difference between an estimate and an observation, and the whole
+# live path turns on it. `revisedTime` is populated long before the event it
+# describes: a flight with status "Expected" that has not left the gate still
+# carries a revised *arrival* time, because that is the airline's current ETA.
+# Subtracting it from the scheduled time produces a perfectly plausible number
+# that is a forecast, not a measurement.
+#
+# Reading it as a measurement is what let 08_monitor grade forecasts against
+# forecasts. `status` is the only field that says which one you are holding.
+_CANCELLED_STATES = {"canceled", "cancelled", "canceleduncertain"}
+_ARRIVED_STATES = {"arrived"}
+_AIRBORNE_STATES = {"departed", "enroute", "enroutetodestination",
+                    "approaching", "diverted"}
+_PRE_DEPARTURE_STATES = {"expected", "scheduled", "checkin", "boarding",
+                         "gateclosed", "delayed"}
+
+
+def phase_from_status(status: Optional[str]) -> str:
+    """Provider status -> the moment the flight is in.
+
+    Returns one of `pre_departure`, `in_flight`, `arrived`, `cancelled`,
+    `unknown`. `unknown` is a real answer and is treated as "no observation has
+    been confirmed" everywhere downstream: the airport-departures feed reports
+    it for most rows, and claiming a departure on the strength of a blank is the
+    error this function exists to prevent.
+    """
+    s = (status or "").strip().lower().replace(" ", "").replace("-", "")
+    if s in _CANCELLED_STATES:
+        return "cancelled"
+    if s in _ARRIVED_STATES:
+        return "arrived"
+    if s in _AIRBORNE_STATES:
+        return "in_flight"
+    if s in _PRE_DEPARTURE_STATES:
+        return "pre_departure"
+    return "unknown"
+
+
 def flight_to_row(flight: dict) -> Optional[dict]:
     """One AeroDataBox flight -> one row of the Silver contract.
 
@@ -247,8 +287,19 @@ def flight_to_row(flight: dict) -> Optional[dict]:
     number = (flight.get("number") or "").replace(" ", "").upper()
     digits = re.sub(r"^[A-Z]{2,3}", "", number)
 
-    dep_delay = _delay_minutes(dep_sched, _parse_utc(dep.get("revisedTime")))
-    arr_delay = _delay_minutes(arr_sched, _parse_utc(arr.get("revisedTime")))
+    # Both are computed, then gated on what has actually happened. The ungated
+    # values are kept beside them as `estimated_*`: they are the airline's own
+    # current expectation and worth showing a passenger, but they are not
+    # evidence and nothing may grade against them.
+    est_dep_delay = _delay_minutes(dep_sched, _parse_utc(dep.get("revisedTime")))
+    est_arr_delay = _delay_minutes(arr_sched, _parse_utc(arr.get("revisedTime")))
+
+    phase = phase_from_status(flight.get("status"))
+    has_departed = phase in ("in_flight", "arrived")
+    has_arrived = phase == "arrived"
+
+    dep_delay = est_dep_delay if has_departed else None
+    arr_delay = est_arr_delay if has_arrived else None
 
     # Local clock times, matching BTS CRS_DEP_TIME / CRS_ARR_TIME.
     crs_dep, crs_arr = _hhmm(dep_local), _hhmm(arr_local)
@@ -303,9 +354,17 @@ def flight_to_row(flight: dict) -> Optional[dict]:
         "crs_arr_time": crs_arr,
         "crs_elapsed_time": elapsed,
         "distance": _distance_miles(flight.get("greatCircleDistance")),
+        # Observations. NULL until the event has happened, by construction.
         "dep_delay": dep_delay,
         "arrival_delay": arr_delay,
+        # The airline's current expectation. Never an outcome, never a feature.
+        "estimated_dep_delay": est_dep_delay,
+        "estimated_arrival_delay": est_arr_delay,
         "flight_status": flight.get("status"),
+        # Derived from status, so it works on any date. OpenSky can only see an
+        # aircraft that is moving right now, which makes it blind to a flight
+        # that has landed and to every date but today.
+        "provider_phase": phase,
         "is_codeshare": (flight.get("codeshareStatus") or "") == "IsCodeshared",
         "data_quality": ",".join(dep.get("quality") or []),
     }

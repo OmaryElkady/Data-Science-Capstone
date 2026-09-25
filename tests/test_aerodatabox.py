@@ -14,6 +14,7 @@ from src.aerodatabox import (
     AeroDataBoxClient,
     departure_to_row,
     flight_to_row,
+    phase_from_status,
     normalise_flight_number,
 )
 
@@ -77,6 +78,7 @@ class TestFlightToRow:
             "arrival": {"airport": {"iata": "IAH"},
                         "scheduledTime": {"utc": "2026-09-14 18:22Z"}},
             "airline": {"iata": "DL"}, "number": "DL 1572",
+            "status": "Departed",
         }
         assert flight_to_row(flight)["dep_delay"] == 25.0
 
@@ -100,6 +102,7 @@ class TestFlightToRow:
             "arrival": {"airport": {"iata": "IAH"},
                         "scheduledTime": {"utc": "2026-09-14 18:22Z"}},
             "airline": {"iata": "DL"}, "number": "DL 1572",
+            "status": "Departed",
         }
         assert flight_to_row(flight)["dep_delay"] == -12.0
 
@@ -152,6 +155,92 @@ class TestFlightToRow:
             if row is not None:
                 assert row["origin_airport_code"] and row["destination_airport_code"]
                 assert row["crs_dep_time"] is not None
+
+
+class TestObservationVsEstimate:
+    """`revisedTime` is populated long before the event it describes.
+
+    A flight with status "Expected" that has not left the gate still carries a
+    revised *arrival* time, because that is the airline's current ETA. Reading it
+    as an outcome is what let 08_monitor grade forecasts against forecasts, and
+    nothing about the mistake is visible: the number is plausible and in the
+    right column.
+
+    `status` is the only field that says which one you are holding.
+    """
+
+    @staticmethod
+    def _flight(status):
+        return {
+            "departure": {"airport": {"iata": "ATL"},
+                          "scheduledTime": {"utc": "2026-09-14 16:17Z"},
+                          "revisedTime": {"utc": "2026-09-14 16:42Z"}},
+            "arrival": {"airport": {"iata": "IAH"},
+                        "scheduledTime": {"utc": "2026-09-14 18:22Z"},
+                        "revisedTime": {"utc": "2026-09-14 18:50Z"}},
+            "airline": {"iata": "DL"}, "number": "DL 1572", "status": status,
+        }
+
+    def test_before_departure_neither_delay_is_observed(self):
+        row = flight_to_row(self._flight("Expected"))
+        assert row["provider_phase"] == "pre_departure"
+        assert row["dep_delay"] is None
+        assert row["arrival_delay"] is None
+        # The estimates survive, clearly labelled. They are worth showing a
+        # passenger and may never be graded against.
+        assert row["estimated_dep_delay"] == 25.0
+        assert row["estimated_arrival_delay"] == 28.0
+
+    def test_in_flight_observes_departure_but_not_arrival(self):
+        row = flight_to_row(self._flight("EnRoute"))
+        assert row["provider_phase"] == "in_flight"
+        assert row["dep_delay"] == 25.0
+        # Still an ETA. The aircraft has not landed.
+        assert row["arrival_delay"] is None
+        assert row["estimated_arrival_delay"] == 28.0
+
+    def test_arrived_observes_both(self):
+        row = flight_to_row(self._flight("Arrived"))
+        assert row["provider_phase"] == "arrived"
+        assert row["dep_delay"] == 25.0
+        assert row["arrival_delay"] == 28.0
+
+    def test_cancelled_observes_neither(self):
+        row = flight_to_row(self._flight("Canceled"))
+        assert row["provider_phase"] == "cancelled"
+        assert row["dep_delay"] is None
+        assert row["arrival_delay"] is None
+
+    def test_unknown_status_claims_nothing(self):
+        # The airport-departures feed reports "Unknown" for most rows. Claiming a
+        # departure on the strength of a blank is the error being prevented.
+        row = flight_to_row(self._flight("Unknown"))
+        assert row["provider_phase"] == "unknown"
+        assert row["dep_delay"] is None
+        assert row["arrival_delay"] is None
+
+    @pytest.mark.parametrize("raw,expected", [
+        ("Expected", "pre_departure"), ("Boarding", "pre_departure"),
+        ("GateClosed", "pre_departure"), ("Gate Closed", "pre_departure"),
+        ("Departed", "in_flight"), ("EnRouteToDestination", "in_flight"),
+        ("Diverted", "in_flight"), ("Arrived", "arrived"),
+        ("Canceled", "cancelled"), ("Cancelled", "cancelled"),
+        (None, "unknown"), ("", "unknown"), ("Whatever", "unknown"),
+    ])
+    def test_status_vocabulary(self, raw, expected):
+        assert phase_from_status(raw) == expected
+
+    def test_the_recorded_fixture_is_an_expected_flight_with_an_eta(self, flight_payload):
+        """The bug, straight from a real recorded payload.
+
+        This record has not departed and carries a revised arrival time. Before
+        the gating it produced an `arrival_delay`, which 07 merged as an outcome
+        and 08 graded against.
+        """
+        rec = flight_payload[0]
+        assert rec["status"] == "Expected"
+        assert rec["arrival"].get("revisedTime") is not None
+        assert flight_to_row(rec)["arrival_delay"] is None
 
 
 class TestTimezoneHandling:
@@ -212,6 +301,7 @@ class TestTimezoneHandling:
             "arrival": {"airport": {"iata": "JFK"},
                         "scheduledTime": {"utc": "2026-09-15 13:00Z"}},
             "airline": {"iata": "DL"}, "number": "DL 99",
+            "status": "Departed",
         }
         assert flight_to_row(flight)["dep_delay"] == 20.0
 
