@@ -1,0 +1,163 @@
+# Databricks Asset Bundle — Flight Delay Platform
+#
+#   databricks bundle validate -t dev
+#   databricks bundle deploy   -t dev
+#   databricks bundle run flight_delay_training -t dev
+#   databricks bundle run flight_delay_scoring  -t dev
+#
+# Orchestration lives in code rather than in clicks, so the jobs are reproducible
+# and reviewable. Free Edition allows 5 concurrent tasks; every dependency here is
+# sequential, so a run never needs more than one.
+#
+# Two jobs, not one. Training and scoring have different cadences and different
+# costs, and collapsing them into a single pipeline means either retraining every
+# time you want a prediction or scoring only when you retrain. Neither is right.
+#
+#   flight_delay_training   manual. Rebuilds Bronze -> Silver -> Gold and retrains
+#                           both champions. Expensive: a full 05_train run does a
+#                           25-trial TPE search plus blocked CV on ~1.3M rows.
+#                           Triggered deliberately, never on a schedule.
+#
+#   flight_delay_scoring    daily. Ingests live flights and scores them against
+#                           whatever currently carries the @champion alias. Cheap.
+#                           Shipped PAUSED — see the note on the schedule below.
+#
+# 03_eda and 09_rotation_probe are deliberately absent from both. Neither writes
+# anything; they are analysis for the reader, not pipeline stages, and running
+# them on a schedule would burn quota to regenerate charts nobody asked for.
+#
+# 09 has a second reason. It reads a full-population BTS month from the volume,
+# which is an optional download rather than a pipeline input, so a scheduled run
+# would fail on any workspace where nobody had fetched it. It answers a question
+# that gets asked once -- is the rotation feature worth a twelvefold increase in
+# training data -- and a question asked once does not belong on a cron.
+
+bundle:
+  name: flight-delay-platform
+
+targets:
+  dev:
+    mode: development
+    default: true
+    # No `host` here on purpose: it resolves from the CLI profile
+    # (DATABRICKS_HOST / ~/.databrickscfg). Hardcoding a workspace URL in a
+    # public repo both leaks the workspace and pins the bundle to one account.
+
+resources:
+  jobs:
+
+    # ---------------------------------------------------------------------
+    # Training — manual trigger
+    # ---------------------------------------------------------------------
+    flight_delay_training:
+      name: flight-delay-training
+      max_concurrent_runs: 1
+
+      # Serverless environment. Environment version 5 is required for
+      # `pyspark.ml` and `mlflow.spark`; on an older version 05_train fails at
+      # import. Declaring dependencies here rather than leaving `%pip install`
+      # in the notebooks means the environment is built once per run instead of
+      # per notebook, and the versions are recorded in code.
+      environments:
+        - environment_key: serverless_v5
+          spec:
+            environment_version: "5"
+            dependencies:
+              - holidays>=0.50
+              - hyperopt
+
+      tasks:
+        - task_key: bronze
+          environment_key: serverless_v5
+          notebook_task:
+            notebook_path: ./notebooks/01_bronze.ipynb
+
+        - task_key: silver
+          depends_on: [{ task_key: bronze }]
+          environment_key: serverless_v5
+          notebook_task:
+            notebook_path: ./notebooks/02_silver.ipynb
+
+        - task_key: gold
+          depends_on: [{ task_key: silver }]
+          environment_key: serverless_v5
+          notebook_task:
+            notebook_path: ./notebooks/04_gold.ipynb
+            base_parameters:
+              # auto: load the saved feature pipeline if present, else fit and
+              # save. `always` after a Silver schema change.
+              refit_pipeline: "auto"
+
+        - task_key: train
+          depends_on: [{ task_key: gold }]
+          environment_key: serverless_v5
+          notebook_task:
+            notebook_path: ./notebooks/05_train.ipynb
+            base_parameters:
+              # true cuts folds, evals and sample size — minutes rather than
+              # hours. Use it to prove the path works before paying for a real run.
+              fast_mode: "false"
+
+      email_notifications:
+        on_failure:
+          - ${workspace.current_user.userName}
+
+    # ---------------------------------------------------------------------
+    # Scoring — scheduled, shipped paused
+    # ---------------------------------------------------------------------
+    flight_delay_scoring:
+      name: flight-delay-scoring
+      max_concurrent_runs: 1
+
+      environments:
+        - environment_key: serverless_v5
+          spec:
+            environment_version: "5"
+            dependencies:
+              - holidays>=0.50
+
+      tasks:
+        - task_key: api_ingest
+          environment_key: serverless_v5
+          notebook_task:
+            notebook_path: ./notebooks/06_api_ingest.ipynb
+            base_parameters:
+              # Two inputs. Origin, destination, times, distance, aircraft and
+              # both OpenSky join keys are derived from the flight number by
+              # AeroDataBox, so they are outputs rather than parameters.
+              FLIGHT_NUMBER: "DL1572"
+              # Left unset so the notebook defaults to today. Today is the only
+              # date on which a live aircraft match can succeed: the OpenSky
+              # snapshot is always current, so a flight from another day is not
+              # in it to be found.
+              FIND_ALTERNATIVES: "true"
+              USE_OPENSKY: "true"
+
+        - task_key: score
+          depends_on: [{ task_key: api_ingest }]
+          environment_key: serverless_v5
+          notebook_task:
+            notebook_path: ./notebooks/07_score.ipynb
+
+        # Grades the forecasts whose flights have since landed. Reads the
+        # predictions table and writes prediction_monitoring; costs no API quota
+        # and touches no model, so it is safe to run on every scoring pass. Early
+        # on it will find nothing resolved and say so -- that is the correct
+        # output, not a failure.
+        - task_key: monitor
+          depends_on: [{ task_key: score }]
+          environment_key: serverless_v5
+          notebook_task:
+            notebook_path: ./notebooks/08_monitor.ipynb
+
+      schedule:
+        quartz_cron_expression: "0 0 6 * * ?"   # 06:00 UTC daily
+        timezone_id: UTC
+        # PAUSED on purpose. This is a portfolio repo on a metered free tier: a
+        # live schedule would quietly consume the compute quota every morning
+        # whether or not anyone is looking. Unpause to demonstrate, then pause again.
+        pause_status: PAUSED
+
+      email_notifications:
+        on_failure:
+          - ${workspace.current_user.userName}
