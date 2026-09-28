@@ -4,25 +4,26 @@
 #   databricks bundle deploy   -t dev
 #   databricks bundle run flight_delay_training -t dev
 #   databricks bundle run flight_delay_scoring  -t dev
+#   databricks bundle run flight_delay_route_watch -t dev
 #
 # Orchestration lives in code rather than in clicks, so the jobs are reproducible
 # and reviewable. Free Edition allows 5 concurrent tasks; every dependency here is
 # sequential, so a run never needs more than one.
 #
-# Two jobs, not one. Training and scoring have different cadences and different
-# costs, and collapsing them into a single pipeline means either retraining every
-# time you want a prediction or scoring only when you retrain. Neither is right.
+# Three jobs, each with its own cadence and cost:
 #
-#   flight_delay_training   manual. Rebuilds Bronze -> Silver -> Gold and retrains
-#                           both champions. Expensive: a full 05_train run does a
-#                           25-trial TPE search plus blocked CV on ~1.3M rows.
-#                           Triggered deliberately, never on a schedule.
+#   flight_delay_training     manual. Rebuilds Bronze -> Silver -> Gold and retrains
+#                             both champions. Expensive: a full 05_train run does a
+#                             25-trial TPE search plus blocked CV on ~1.3M rows.
 #
-#   flight_delay_scoring    daily. Ingests live flights and scores them against
-#                           whatever currently carries the @champion alias. Cheap.
-#                           Shipped PAUSED — see the note on the schedule below.
+#   flight_delay_scoring      manual. Asks about one flight (FLIGHT_NUMBER) and scores
+#                             it and its route against the @champion models.
 #
-# 03_eda and 09_rotation_probe are deliberately absent from both. Neither writes
+#   flight_delay_route_watch  daily. Forecasts a few flights on each watched route
+#                             and grades earlier forecasts once they land. Shipped
+#                             PAUSED -- see the note on its schedule.
+#
+# 03_eda and 09_rotation_probe are deliberately absent from all three. Neither writes
 # anything; they are analysis for the reader, not pipeline stages, and running
 # them on a schedule would burn quota to regenerate charts nobody asked for.
 #
@@ -103,7 +104,7 @@ resources:
           - ${workspace.current_user.userName}
 
     # ---------------------------------------------------------------------
-    # Scoring — scheduled, shipped paused
+    # Scoring — manual, one flight
     # ---------------------------------------------------------------------
     flight_delay_scoring:
       name: flight-delay-scoring
@@ -150,12 +151,59 @@ resources:
           notebook_task:
             notebook_path: ./notebooks/08_monitor.ipynb
 
+      email_notifications:
+        on_failure:
+          - ${workspace.current_user.userName}
+
+    # ---------------------------------------------------------------------
+    # Route watch — daily forecast-and-grade loop, shipped paused
+    # ---------------------------------------------------------------------
+    flight_delay_route_watch:
+      name: flight-delay-route-watch
+      max_concurrent_runs: 1
+
+      environments:
+        - environment_key: serverless_v5
+          spec:
+            environment_version: "5"
+            dependencies:
+              - holidays>=0.50
+
+      tasks:
+        - task_key: route_watch
+          environment_key: serverless_v5
+          notebook_task:
+            notebook_path: ./notebooks/10_route_watch.ipynb
+
+        # Score only when the watch wrote rows. On an empty morning 07 would
+        # otherwise re-score the previous run and re-date forecasts for flights
+        # that have since departed.
+        - task_key: wrote_rows
+          depends_on: [{ task_key: route_watch }]
+          condition_task:
+            op: GREATER_THAN
+            left: "{{tasks.route_watch.values.rows_written}}"
+            right: "0"
+
+        - task_key: score
+          depends_on: [{ task_key: wrote_rows, outcome: "true" }]
+          environment_key: serverless_v5
+          notebook_task:
+            notebook_path: ./notebooks/07_score.ipynb
+
+        - task_key: monitor
+          depends_on: [{ task_key: score }]
+          environment_key: serverless_v5
+          notebook_task:
+            notebook_path: ./notebooks/08_monitor.ipynb
+
       schedule:
-        quartz_cron_expression: "0 0 6 * * ?"   # 06:00 UTC daily
+        # 11:00 UTC is 07:00 in Atlanta and 04:00 in Los Angeles: yesterday's
+        # flights have all landed and most of today's are still ahead.
+        quartz_cron_expression: "0 0 11 * * ?"
         timezone_id: UTC
-        # PAUSED on purpose. This is a portfolio repo on a metered free tier: a
-        # live schedule would quietly consume the compute quota every morning
-        # whether or not anyone is looking. Unpause to demonstrate, then pause again.
+        # Unpause for a collection window, then pause again. The notebook's quota
+        # reserve stops API calls either way, but compute is still spent daily.
         pause_status: PAUSED
 
       email_notifications:
