@@ -8,7 +8,7 @@
 ![MLflow](https://img.shields.io/badge/MLflow-3.8-0194E2?logo=mlflow&logoColor=white)
 ![Unity Catalog](https://img.shields.io/badge/Unity%20Catalog-%40champion-1B3139)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-140%20passing-success)
+![Tests](https://img.shields.io/badge/tests-159%20passing-success)
 
 A Bronze→Silver→Gold Delta pipeline over 3M BTS flight records, feeding two Spark ML models
 registered in Unity Catalog and served against live flights from two APIs.
@@ -21,20 +21,20 @@ Two models answer the same question at different moments. The **in-flight** mode
 actual departure delay; the **pre-departure** model does not, and is the only one that is
 useful before an aircraft leaves the gate.
 
-The in-flight model scores **0.9256 test ROC-AUC**. A logistic regression on `dep_delay`
-*alone* scores **0.9261**. The 818 other engineered features buy **`-0.0004`** — they make it
+The in-flight model scores **0.9258 test ROC-AUC**. A logistic regression on `dep_delay`
+*alone* scores **0.9261**. The 818 other engineered features buy **`-0.0003`** — they make it
 very slightly worse than the one-feature baseline.
 
 That result is the project's spine. It would have been easy to report "0.93 AUC flight delay
 predictor" and stop; the baseline is what makes that claim indefensible, and running it is
 what redirected the work. The pre-departure variant — where the features have to do the
-work — scores **0.6214 test ROC-AUC, 0.3974 F1** against a majority-class floor of 0.5.
+work — scores **0.6231 test ROC-AUC, 0.4010 F1** against a majority-class floor of 0.5.
 
 Everything downstream follows from taking that honestly: a temporal split because delay
 cascades within an operating day, a third window because the decision threshold cannot be
 chosen on data the model trained on, a tie rule because a margin inside fold noise is not a
-result, and a threshold of 0.19 rather than 0.5 because at 0.5 the pre-departure model
-predicts almost nothing and scores **F1 = 0.0016**.
+result, and a threshold of 0.18 rather than 0.5 because at 0.5 the pre-departure model
+predicts almost nothing and scores **F1 = 0.0031**.
 
 ---
 
@@ -100,7 +100,7 @@ Every one of these is used in the pipeline, not listed aspirationally.
 |---|---|---|
 | `CHECK` constraints | Silver, Gold | The filters are invariants. `ALTER TABLE ADD CONSTRAINT` validates existing rows, so a clean run *is* the data-quality assertion |
 | `OPTIMIZE … ZORDER` | Silver, Gold | Every training split filters `flight_year`; Z-ordering lets those filters skip files |
-| `MERGE` | Predictions | Idempotent upsert on (flight, date, run) — re-running after a failure updates rather than duplicates |
+| `MERGE` | Predictions | Upsert keyed on the flight and the model that made the forecast — a re-run refreshes a forecast instead of duplicating it, and an outcome reaches every forecast made about that flight |
 | Time travel | Silver | `DESCRIBE HISTORY` answers "did this number move because the model changed or the data did?" |
 | `autoOptimize` | Silver, Gold | Reasonable file sizes on write instead of a compaction job later |
 
@@ -116,18 +116,18 @@ nor Christmas. It is reported that way rather than as "the 2023 holdout".
 |---|---|---|---|---|---|---|
 | Majority class | 0.5000 | — | 0.0000 | — | — | — |
 | **`dep_delay` alone (logistic)** | **0.9261** | — | 0.8067 | — | — | 0.50 |
-| In-flight (RF, 819 slots) | 0.9256 | 0.8848 | 0.8136 | 0.8739 | 0.7610 | 0.41 |
-| **Pre-departure (RF)** | **0.6214** | 0.3294 | 0.3974 | 0.2906 | 0.6282 | 0.19 |
+| In-flight (RF, 819 slots) | 0.9258 | 0.8844 | 0.8137 | 0.8749 | 0.7605 | 0.40 |
+| **Pre-departure (RF)** | **0.6231** | 0.3303 | 0.4010 | 0.2813 | 0.6980 | 0.18 |
 
-**Lift of the in-flight model over one feature: `-0.0004`.** Not "small" — *negative*. Every
+**Lift of the in-flight model over one feature: `-0.0003`.** Not "small" — *negative*. Every
 piece of feature engineering in this project, applied to the variant that already knows the
 departure delay, produces a model fractionally worse than a logistic regression on that one
 column. Both numbers sit well inside noise, which is the point: they are the same model.
 
-Pre-departure cross-validates at **0.6159 ± 0.0315** against a test score of 0.6214 — a gap of
-`+0.0055`, well inside one fold standard deviation. It generalises.
+Pre-departure cross-validates at **0.6165 ± 0.0325** against a test score of 0.6231 — a gap of
+`+0.0066`, well inside one fold standard deviation. It generalises.
 
-The in-flight CV mean is **0.8461 ± 0.1165** against a test score of 0.9256, and the notebook
+The in-flight CV mean is **0.8463 ± 0.1166** against a test score of 0.9258, and the notebook
 refuses to quote the mean on its own: the spread is larger than most of the differences anyone
 would want to read off it. Stratifying the folds within each year brought that spread down
 from 0.1517 but did not remove it, and `05_train` checks the obvious explanation and rules it
@@ -140,27 +140,37 @@ Selected on the 2022 window, measured there, then applied unchanged to 2023.
 
 | | Pre-departure | In-flight |
 |---|---|---|
-| F1 at the tuned threshold | 0.3773 @ 0.19 | 0.8098 @ 0.41 |
-| F1 at Spark's default 0.50 | **0.0016** | 0.8038 |
-| Cost of the default | **+0.3757 F1** | +0.0059 F1 |
-| Within 1% of best F1 | 0.16 – 0.21 | 0.29 – 0.52 |
+| F1 at the tuned threshold | 0.3773 @ 0.18 | 0.8098 @ 0.40 |
+| F1 at Spark's default 0.50 | **0.0031** | 0.8040 |
+| Cost of the default | **+0.3742 F1** | +0.0057 F1 |
+| Within 1% of best F1 | 0.17 – 0.21 | 0.30 – 0.50 |
 
 At 0.5 the pre-departure model predicts almost nothing. Both optima are plateaus rather than
 peaks, which is worth more than the point estimate: anything in those bands performs the same,
-so the exact cut is not load-bearing and a reader should not treat 0.19 as precise.
+so the exact cut is not load-bearing and a reader should not treat 0.18 as precise.
 
 The window is carved out *before* cross-validation, because `CrossValidator.fit()` refits
 `bestModel` on its entire input and any CV fold is therefore in-sample by the time a champion
 exists.
 
-**The advisory cut exists for one model and not the other.** It is defined as the lowest
-threshold whose precision clears 50% *and* whose recall clears 5% — a cut can pass the first
-test by flagging almost nothing, and precision measured on a handful of rows is noise wearing
-a guarantee. In-flight has one at **0.07** (precision 0.517, recall 0.888). Pre-departure has
-none: the best threshold reaching 50% precision is 0.49 and it catches **0.1%** of delayed
-flights. `07_score` falls back to the F1 cut and says so. A 0.62-AUC model is simply never
-reliably right when it calls a flight late, and that is worth stating rather than hiding
-behind a cut chosen for a different purpose.
+**The call a person sees is made at 50%, not at the F1 cut.** The probabilities are
+calibrated, so a flight is more likely late than not exactly when its probability reaches 0.5,
+and that is where `07_score` calls it `LIKELY LATE`. The F1 cut stays where every metric above
+was computed.
+
+`05_train` also tags each model version with an "advisory" cut: the lowest threshold at which
+at least half of the flights *above* it turn out late. That answers a different question, and
+it was the wrong one to put in front of people. The share is an average over everything above
+the cut, dominated by near-certain flights, so it says nothing about the flight sitting at it.
+For the in-flight model it came out at **0.07** (precision 0.522, recall 0.886), and the board
+labelled a flight with a 14.9% chance of delay as DELAY EXPECTED. The tag is kept on the model
+for the record and no longer drives the label.
+
+For the pre-departure model the same rule found nothing usable: the best threshold reaching
+50% precision is 0.48, and it catches **0.5%** of delayed flights while flagging 0.21% of all
+flights. A 0.62-AUC model is almost never more likely right than wrong when it calls a flight
+late, and a 50% call says exactly that — its forecasts come out `LIKELY ON TIME`, with the risk
+carried by the percentage and the comparison against the rest of the route.
 
 ### Calibration
 
@@ -169,12 +179,12 @@ the other, and the honest reading is not the same in both columns.**
 
 | | Pre-departure raw | Pre-departure calibrated | In-flight raw | In-flight calibrated |
 |---|---|---|---|---|
-| Largest bin deviation | 0.0750 | 0.0925 | 0.0918 | **0.0247** |
-| Brier score | 0.1752 | **0.1712** | 0.0637 | **0.0632** |
-| Test ROC-AUC | 0.6214 | 0.6214 | 0.9256 | 0.9256 |
+| Largest bin deviation | 0.0760 | 0.0890 | 0.0950 | **0.0286** |
+| Brier score | 0.1750 | **0.1712** | 0.0638 | **0.0632** |
+| Test ROC-AUC | 0.6231 | 0.6231 | 0.9258 | 0.9258 |
 
 For the in-flight model it does what it is supposed to: bin deviation falls by a factor of
-almost four.
+more than three.
 
 For the pre-departure model the two measures **disagree**. The Brier score improves, and Brier
 is a proper scoring rule — it cannot be gamed by a calibration map that makes the summary
@@ -191,9 +201,9 @@ ROC-AUC cannot move in either column: isotonic regression is monotonic, so it co
 confidence without reordering anything.
 
 **What reading the wrong column would have cost.** The threshold is selected on
-`p_calibrated`. Applying that same 0.19 to the raw probability instead — one number, two
-scales, no error anywhere — gives F1 **0.3457** against **0.3974**, and flags 24.1% of flights
-instead of 49.8%. An earlier version of `05_train` did precisely that: it selected on raw
+`p_calibrated`. Applying that same 0.18 to the raw probability instead — one number, two
+scales, no error anywhere — gives F1 **0.3516** against **0.4010**, and flags 26.9% of flights
+instead of 57.1%. An earlier version of `05_train` did precisely that: it selected on raw
 scores, reported on raw scores, then registered a calibrated pipeline tagged with the raw-scale
 cut.
 
@@ -273,7 +283,8 @@ asked. A flight number is not a flight: DL1572 can fly ATL->IAH in the morning a
 the afternoon, and a key without the route silently merges them. A key with the *scoring run's*
 date has the opposite failure: the forecast and the outcome land on separate rows, because
 almost any flight worth grading lands on a different calendar day from the one its forecast was
-made on.
+made on. Within a flight, each model's forecast is its own row, so a later in-flight score
+never replaces the pre-departure claim made before it.
 
 **Two APIs, by phase.** AeroDataBox answers *how late* on gate semantics — the same quantity
 BTS records as `DEP_DELAY`. OpenSky answers *where and what phase*: one call returned 7,540
@@ -307,7 +318,7 @@ speedup         :   27.29x          (200,000-row sample, .write.format("noop"))
 of 2019, so the refactor is proven rather than hoped for. `spark_day_of_week` pins Spark's
 1=Sunday convention against Python's 0=Monday — a silent one-day shift otherwise.
 
-**136 tests**, no cluster required. Fixtures are recorded live payloads, so the parsers are
+**159 tests**, no cluster required. Fixtures are recorded live payloads, so the parsers are
 tested against the shape the APIs actually return.
 
 ---
@@ -330,7 +341,7 @@ CI therefore never executes `01`-`08`. It cannot. What it can do is catch every 
 does not need a cluster, and four jobs do that:
 
 - **Lint** - `flake8` on `src/` and `tests/`, `nbqa flake8` on the notebooks
-- **Unit tests** - 136 tests with coverage. `src/*.py` holds no module-level `SparkSession`,
+- **Unit tests** - 159 tests with coverage. `src/*.py` holds no module-level `SparkSession`,
   by design, which is what lets the suite run without installing PySpark
 - **Notebook contracts** - `tools/validate_notebooks.py`: every cell parses, every
   `config.X` resolves, every notebook carries its contract header, and no cell reads a name
@@ -445,7 +456,7 @@ flight.
 | Days before departure | unknown | pre-departure | The honest forecast: schedule, route, carrier, time of day. **This is the intended use.** |
 | Within a few hours of departure | usually still unknown | pre-departure | Same forecast, plus live FAA airspace conditions for the origin and destination |
 | After pushback, before landing | known | in-flight | A much stronger estimate - the model that knows how late the aircraft actually left |
-| After it lands | known | in-flight | No longer a forecast. The `OUTCOME` block reports whether the earlier call was right |
+| After it lands | known | in-flight | No longer a forecast: a score made with hindsight is marked retrospective and never graded. The `OUTCOME` block grades the forecasts made before it |
 
 **So: no, do not wait until the flight has landed.** Landing is when the answer stops being a
 prediction. Run it before departure for the number you can act on; run it again afterwards
@@ -454,12 +465,21 @@ check automatically whenever `arrival_delay` has been filled in, so a second run
 is how the project closes its own loop - one flight at a time, accumulating in
 `flight_delay_predictions`.
 
-**The second run can be any day.** A forecast is keyed on the flight - carrier, number, date
-and route - and not on the day it was made, so the outcome lands on the row that already holds
-the forecast however long you leave it. That row is then frozen: the outcome pass writes the
-observations and leaves the probability, the thresholds, the model versions and the recorded
-airspace conditions exactly as they were. A forecast is a claim made at a moment, and grading
-it means keeping both halves of the same row.
+**The second run can be any day** inside the provider's few-day lookback, as long as it uses the
+same flight number and the flight's own date. `FLIGHT_DATE` defaults to today, so set it by
+hand. A forecast is keyed on the flight — carrier, number, date and route — and on the model
+that made it, not on the day it was made. A flight scored before departure and again in the
+air therefore holds two forecasts; when it lands the outcome is written to both, and
+`08_monitor` grades each against its own model. A graded forecast is frozen: the outcome pass
+writes the observations and leaves the probability, thresholds, model versions and recorded
+airspace conditions exactly as they were.
+
+**What counts as observed comes from the provider's status, not its times.** AeroDataBox
+publishes a revised departure and arrival time long before either happens — they are the
+airline's current estimate. `dep_delay` is taken as observed only once the status says the
+aircraft has departed, and `arrival_delay` only once it says `Arrived`. Until then the
+estimates are kept separately as `estimated_dep_delay` and `estimated_arrival_delay`, and
+nothing is graded against them.
 
 ### The API cannot see far ahead
 
@@ -510,10 +530,9 @@ override it.
 
 `07_score` ends with the flight in plain language. Five things to read, in order:
 
-- **`prediction`** - the model's call at its own tuned threshold. Not 0.5: at Spark's default
-  the pre-departure model predicts almost nothing and scores F1 = 0.0016. For a pre-departure
-  flight this is the F1 cut, because that variant has no usable advisory cut - see
-  **Threshold** above. For an in-flight one it is the advisory cut at 0.07.
+- **`prediction`** - `LIKELY LATE` when the calibrated probability is at least 50%, otherwise
+  `LIKELY ON TIME`. The F1-optimal cut is kept for the metrics and is not a call to show a
+  person - see **Threshold** above. `confidence` says how far the probability sits from 50%.
 - **`vs_route`** - this flight against the median flight on the same route that day. Usually
   the more actionable of the two. A 25% risk is bad news when the alternatives sit at 12% and
   simply the price of the route when they sit at 24%.
@@ -557,8 +576,8 @@ evaluation here is against a held-out slice of the same 2019-2023 extract:
 
 1. **Is it still calibrated?** The isotonic stage was fitted on 2022 and confirmed on 2023.
    Calibration is a property of a distribution, not of a model, and distributions move.
-2. **Which cut was right?** The F1 and advisory thresholds disagree by construction. With
-   outcomes the disagreement becomes scorable.
+2. **Which cut was right?** The F1 cut the metrics use and the 50% call a person sees
+   disagree by construction. With outcomes the disagreement becomes scorable.
 3. **Does it fail when the NAS is degraded?** `07` records FAA conditions at prediction time
    and the model has never seen them. If misses concentrate under active conditions, that is
    the evidence for collecting NAS history and building the feature. If they do not, the
@@ -581,7 +600,7 @@ outcome is neither on time nor late, so the 15-minute rule cannot grade it eithe
 
 ## Limitations
 
-**The pre-departure model is weak, and that is the finding.** 0.6214 ROC-AUC. Every model
+**The pre-departure model is weak, and that is the finding.** 0.6231 ROC-AUC. Every model
 family tied inside fold noise — a linear model matching a boosted ensemble means the features
 are exhausted, not that the search was inadequate. The honest conclusion is that scheduled
 attributes of a flight do not determine whether it will be late; what happens on the day
@@ -601,20 +620,20 @@ Christmas peaks.
 points. Some of the test-set degradation is distribution shift rather than overfitting.
 
 **Calibration helps one model and is ambiguous on the other.** In-flight bin deviation
-falls 0.0918 → 0.0247. Pre-departure improves on Brier (0.1752 → 0.1712) and worsens on largest
-bin deviation (0.0750 → 0.0925), which most likely means the miscalibration is not stable
+falls 0.0950 → 0.0286. Pre-departure improves on Brier (0.1750 → 0.1712) and worsens on largest
+bin deviation (0.0760 → 0.0890), which most likely means the miscalibration is not stable
 between 2022 and 2023. The calibrator and the threshold are both fitted on the 2022 window, so
 the selection sweep is in-sample for the calibration step; the 2023 evaluation is the only
 clean measurement of either.
 
-**The in-flight fold spread is unexplained.** 0.8461 ± 0.1165 in cross-validation against
-0.9256 on test. Stratifying folds within each year brought the spread down from 0.1517 but did
+**The in-flight fold spread is unexplained.** 0.8463 ± 0.1166 in cross-validation against
+0.9258 on test. Stratifying folds within each year brought the spread down from 0.1517 but did
 not remove it, and the obvious cause is ruled out: the folds differ by 3.34% in delay rate and
 3.96 minutes in mean `dep_delay`. The CV mean is reported with that caveat attached rather
 than quoted on its own.
 
 **Feature importance is concentrated and the measure is biased.** The top 5 of 819 slots carry
-91.0% of Gini importance, and Gini is biased toward high-cardinality features, which inflates
+90.4% of Gini importance, and Gini is biased toward high-cardinality features, which inflates
 the one-hot airport columns. Permutation importance on the test set is the unbiased
 alternative and was not run.
 
