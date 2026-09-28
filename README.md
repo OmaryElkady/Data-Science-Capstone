@@ -422,10 +422,17 @@ databricks bundle run flight_delay_training -t dev
 ```
 
 **What `mode: development` does for you.** It prefixes job names so a deploy cannot collide
-with anything else in the workspace, and it force-pauses every schedule. The route watch is
-declared `PAUSED` as well, deliberately: a live schedule on a metered free tier consumes
-quota every morning whether or not anyone is watching. To collect, deploy, then press
-**Resume** on its schedule in the Jobs UI; the next deploy pauses it again.
+with anything else in the workspace, and it force-pauses every schedule. That is why the
+bundle has a second target. `prod` uses `mode: production`, which deploys schedules as
+written, so the route watch's daily run starts on deploy:
+
+```bash
+databricks bundle deploy -t prod
+```
+
+A bundle-deployed job is locked in the UI (its **Resume** button is disabled), so pausing it
+is a deploy too: `databricks bundle deploy -t prod --var watch_schedule=PAUSED`. The schedule
+lives in code in both directions.
 
 **One gotcha worth knowing.** `bundle deploy` uploads the notebooks from your *local working
 tree* to a bundle-managed workspace path, and the deployed job runs that copy - not the
@@ -436,7 +443,7 @@ branch at run time, which removes the step at the cost of making every run depen
 
 Training is manual and expensive - a full `05_train` run is a 25-trial TPE search plus blocked
 CV on ~1.3M rows. Scoring one flight is manual and cheap. The route watch is the only
-scheduled job, and it ships paused.
+scheduled job, and it runs only from the `prod` target.
 
 ---
 
