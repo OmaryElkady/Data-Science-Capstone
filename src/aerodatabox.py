@@ -193,23 +193,13 @@ def _delay_minutes(scheduled: Optional[datetime], revised: Optional[datetime]) -
     return (revised - scheduled).total_seconds() / 60.0
 
 
-# BTS records DISTANCE in statute miles, so that is the scale both models learned
-# `distance` on. AeroDataBox returns the same quantity in several units at once.
 _KM_TO_MILES = 0.621371
 
 
 def _distance_miles(block: Optional[dict]) -> Optional[float]:
-    """Great-circle distance in statute miles — the unit BTS DISTANCE uses.
+    """Great-circle distance in statute miles, the unit BTS DISTANCE (and the model) uses.
 
-    This used to read `km` straight out of the response, which is the same
-    quantity measured with a different ruler. ATL->IAH is 689 miles and 1109 km,
-    and a model trained on miles reads 1109 as a flight about as long as Atlanta
-    to Denver. Nothing raises: the value is a plausible number in the right
-    column, just describing a different flight, on every live prediction the
-    project has ever made.
-
-    The provider supplies `mile` alongside `km`, so prefer it and convert only
-    when it is absent.
+    Prefers the provider's `mile` field and converts `km` only when it is absent.
     """
     if not block:
         return None
@@ -220,17 +210,8 @@ def _distance_miles(block: Optional[dict]) -> Optional[float]:
     return None if km is None else float(km) * _KM_TO_MILES
 
 
-# What the provider's `status` licenses us to believe.
-#
-# This is the difference between an estimate and an observation, and the whole
-# live path turns on it. `revisedTime` is populated long before the event it
-# describes: a flight with status "Expected" that has not left the gate still
-# carries a revised *arrival* time, because that is the airline's current ETA.
-# Subtracting it from the scheduled time produces a perfectly plausible number
-# that is a forecast, not a measurement.
-#
-# Reading it as a measurement is what let 08_monitor grade forecasts against
-# forecasts. `status` is the only field that says which one you are holding.
+# `revisedTime` exists before the event it describes (an "Expected" flight carries
+# an arrival ETA), so only `status` says whether a delay was observed or estimated.
 _CANCELLED_STATES = {"canceled", "cancelled", "canceleduncertain"}
 _ARRIVED_STATES = {"arrived"}
 _AIRBORNE_STATES = {"departed", "enroute", "enroutetodestination",
@@ -242,11 +223,8 @@ _PRE_DEPARTURE_STATES = {"expected", "scheduled", "checkin", "boarding",
 def phase_from_status(status: Optional[str]) -> str:
     """Provider status -> the moment the flight is in.
 
-    Returns one of `pre_departure`, `in_flight`, `arrived`, `cancelled`,
-    `unknown`. `unknown` is a real answer and is treated as "no observation has
-    been confirmed" everywhere downstream: the airport-departures feed reports
-    it for most rows, and claiming a departure on the strength of a blank is the
-    error this function exists to prevent.
+    Returns `pre_departure`, `in_flight`, `arrived`, `cancelled` or `unknown`.
+    `unknown` confirms nothing: no delay is treated as observed on its strength.
     """
     s = (status or "").strip().lower().replace(" ", "").replace("-", "")
     if s in _CANCELLED_STATES:
@@ -287,10 +265,8 @@ def flight_to_row(flight: dict) -> Optional[dict]:
     number = (flight.get("number") or "").replace(" ", "").upper()
     digits = re.sub(r"^[A-Z]{2,3}", "", number)
 
-    # Both are computed, then gated on what has actually happened. The ungated
-    # values are kept beside them as `estimated_*`: they are the airline's own
-    # current expectation and worth showing a passenger, but they are not
-    # evidence and nothing may grade against them.
+    # Observed only once status confirms the event; the ungated values are kept as
+    # estimated_* for display and are never graded against.
     est_dep_delay = _delay_minutes(dep_sched, _parse_utc(dep.get("revisedTime")))
     est_arr_delay = _delay_minutes(arr_sched, _parse_utc(arr.get("revisedTime")))
 
