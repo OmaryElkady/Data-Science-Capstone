@@ -222,3 +222,23 @@ ALTERNATIVE_TOP_N = 5
 # So the test is against the clock, not against the original's departure time,
 # with enough lead to rebook and reach the gate.
 ALTERNATIVE_MIN_LEAD_MINUTES = 60
+
+# ---------------------------------------------------------------------------
+# Scheduled route watch (notebook 10, job flight-delay-route-watch)
+# ---------------------------------------------------------------------------
+# Busy routes in three time zones. Each daily run forecasts a few
+# of today's departures on each route and grades yesterday's.
+WATCH_ROUTES = "ATL-JFK,ORD-LGA,LAX-SFO"
+# The airport-departures query takes local time, so each watched origin needs
+# its zone. Add an entry here to watch a route from a new origin.
+WATCH_ORIGIN_TZ = {
+    "ATL": "America/New_York",
+    "ORD": "America/Chicago",
+    "LAX": "America/Los_Angeles",
+}
+WATCH_MAX_PER_ROUTE = 3      # forecasts per route per day, spread across the window
+WATCH_WINDOW_HOURS = 12      # the provider's cap for one airport query
+WATCH_LOOKBACK_DAYS = 3      # how long to keep trying to collect an outcome
+# Stop calling AeroDataBox below this many units, so the schedule can never
+# spend the budget that manual runs of 06 depend on.
+AERODATABOX_QUOTA_RESERVE = 40
