@@ -135,6 +135,12 @@ from 0.1517 but did not remove it, and `05_train` checks the obvious explanation
 out — the folds differ by only **3.34%** in delay rate and **3.96 minutes** in mean
 `dep_delay`, so fold composition is not what is moving the score.
 
+Every figure here is also on the MLflow run that registered the champion. The pre-departure run
+below links to `workspace.flights.rf_pre_departure` v11, shows the PR-AUC, ROC-AUC and 0.18
+threshold from the table, and records the isotonic calibration fitted on 2022.
+
+![MLflow run for the pre-departure champion: registered as rf_pre_departure v11, with PR-AUC 0.3303, ROC-AUC 0.6231, threshold 0.18 and isotonic calibration](docs/images/mlflow_champion_run.png)
+
 ### Threshold
 
 Selected on the 2022 window, measured there, then applied unchanged to 2023.
