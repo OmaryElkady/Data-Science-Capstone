@@ -216,9 +216,9 @@ resources:
             notebook_path: ./notebooks/08_monitor.ipynb
 
       schedule:
-        # 11:00 UTC is 07:00 in Atlanta and 04:00 in Los Angeles: yesterday's
+        # 9:00 UTC is 05:00 in Atlanta and 02:00 in Los Angeles: yesterday's
         # flights have all landed and most of today's are still ahead.
-        quartz_cron_expression: "0 0 11 * * ?"
+        quartz_cron_expression: "0 0 9 * * ?"
         timezone_id: UTC
         # Set per target (see `variables`): paused in dev, running in prod. The
         # notebook's quota reserve stops API calls either way.
