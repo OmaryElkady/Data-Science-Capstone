@@ -796,6 +796,8 @@ rather than an addition, which is why it is here and not above.
 
 **Omar Elkady** — B.S. Data Science, Georgia State University
 
+[GitHub](https://github.com/OmaryElkady) · [LinkedIn](https://www.linkedin.com/in/omar-elkady-847b051ba/) · omitelkady1@gmail.com
+
 ## References
 
 - Bureau of Transportation Statistics, On-Time Performance
