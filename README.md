@@ -421,6 +421,10 @@ Run them from the UI, or:
 databricks bundle run flight_delay_training -t dev
 ```
 
+![Training job: bronze, silver, gold, then train](docs/images/training_job.png)
+
+![Scoring job: api_ingest, score, then monitor](docs/images/scoring_job.png)
+
 **What `mode: development` does for you.** It prefixes job names so a deploy cannot collide
 with anything else in the workspace, and it force-pauses every schedule. That is why the
 bundle has a second target. `prod` uses `mode: production`, which deploys schedules as
@@ -621,6 +625,8 @@ removes the person from the loop. Every morning at 11:00 UTC, `10_route_watch`:
 
 `07` and `08` then run as usual. A condition task skips them on a morning that wrote nothing,
 so an empty run never re-scores yesterday's forecasts.
+
+![Route watch job: route_watch, then the wrote_rows condition, then score and monitor on its True branch](docs/images/route_watch_job.png)
 
 | Route | Origin time zone |
 |---|---|
