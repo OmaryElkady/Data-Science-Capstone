@@ -1,25 +1,9 @@
 """FAA National Airspace System status: live airport conditions, free, no key.
 
-What this is for — and what it is not
--------------------------------------
-`02_eda` decomposed delay by cause and put **NAS at 19.3% of delay minutes** and
-47.7% of delayed flights. NAS is airspace and air-traffic congestion: ground
-delay programmes, ground stops, runway construction, volume. Nothing in the
-feature set touches it, because nothing in the BTS extract describes the state of
-the airspace on the day a flight operated.
-
-This endpoint describes exactly that, in real time, for free.
-
-**It cannot be a model feature.** There is no historical archive: the endpoint
-reports conditions *now*, so there is no way to construct the matching column for
-2019-2023 and therefore no way for a model to have learned what it means. Feeding
-it to a model trained without it would be scoring on an input the model has never
-seen, which is worse than not having it at all.
-
-So it is **context**, shown beside the prediction rather than inside it. A model
-that says 16% while Atlanta is under a ground delay programme averaging 45
-minutes is not wrong — it never knew — and a reader who can see both is better
-informed than one who sees either alone. Saying which is which is the honest part.
+NAS causes about a fifth of delay minutes (03_eda), but there is no historical archive, so
+it cannot be a model feature: a model trained on 2019-2023 never saw it. It is shown beside
+a forecast as context, and recorded so 08_monitor can check whether misses cluster under
+degraded conditions.
 
 Source: https://nasstatus.faa.gov/api/airport-status-information (XML, no key).
 """

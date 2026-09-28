@@ -1,43 +1,12 @@
-"""AeroDataBox client: real schedules, real gate times, and the join keys.
+"""AeroDataBox client and projection: schedules, gate times, status, OpenSky join keys.
 
-Why this replaces AviationStack for the live path
--------------------------------------------------
-The AviationStack plan in use returns *historical* schedules — flights dated two
-weeks before the day they were fetched. That makes the live half of this project
-impossible rather than merely limited: a flight from a fortnight ago cannot be
-airborne now, so every attempt to match it against a live ADS-B snapshot returned
-zero by construction.
+`/flights/number/{number}/{date}` returns every leg a flight number flies on a date, so the
+route is derived from the number rather than asked for. Each record also carries `callSign`
+and `aircraft.modeS`, the keys OpenSky uses as `callsign` and `icao24`.
 
-AeroDataBox returns the flight that is operating today, with both scheduled and
-revised times, and it carries two things that matter more than either:
-
-- `callSign` (e.g. `"DAL1572"`) — OpenSky's callsign, supplied directly. No
-  IATA-to-ICAO mapping table is needed anywhere.
-- `aircraft.modeS` (e.g. `"A34729"`) — the ICAO 24-bit airframe address, which is
-  OpenSky's `icao24`. That is a *unique airframe* match rather than a flight-number
-  match, and it is the strongest join available between the two feeds.
-
-One input, not four
--------------------
-`/flights/number/{number}/{date}` derives the whole itinerary from the flight
-number: DL1572 comes back as ATL->IAH with times, distance, aircraft and airline.
-Origin and destination are outputs, not inputs, so the user supplies a flight
-number and a date and nothing else.
-
-Delay semantics
----------------
-`dep_delay` here is `revisedTime - scheduledTime` on departure, which is gate
-delay — the same quantity BTS records as `DEP_DELAY` and the models were trained
-on. This is the reason AeroDataBox answers "how late" while OpenSky answers
-"where and what phase": deriving delay from ADS-B would give wheels-off, which
-differs from gate delay by taxi-out and is worst at exactly the congested
-airports where delay matters most.
-
-Quota
------
-The free RapidAPI tier is metered in "API units" as well as requests, and the two
-limits differ. Every response carries both in headers; `last_quota` exposes what
-the most recent call reported so a notebook can print it rather than guess.
+Delays are `revisedTime - scheduledTime`, on the gate semantics BTS records as `DEP_DELAY`,
+and count as observed only once `status` confirms the event. The free tier is metered in
+units as well as requests; `last_quota` holds what the last call reported.
 """
 
 from __future__ import annotations
@@ -156,16 +125,8 @@ def _parse_utc(block: Optional[dict]) -> Optional[datetime]:
 def _parse_local(block: Optional[dict]) -> Optional[datetime]:
     """Local airport time, spelled '2026-09-14 12:17-04:00'.
 
-    This, not UTC, is what the clock-time features are built from. BTS records
-    `CRS_DEP_TIME` as local time at the origin, so the model learned hour-of-day
-    risk on a local clock — `02_eda` measured the quietest hour at 05:00 and the
-    worst at 19:00, both local. Feeding it a UTC hour reads a different point on
-    that curve: DL1572 leaves Atlanta at 12:17 local and 16:17Z, and scoring it
-    as a 16:00 departure is simply a different flight as far as the model is
-    concerned.
-
-    The same applies to the date. BTS `FL_DATE` is the local calendar date, which
-    for a late-evening departure is the previous day in UTC.
+    Clock-time features use local time because BTS records CRS_DEP_TIME and FL_DATE that
+    way; a UTC hour would put the flight at a different point on the hour-of-day risk curve.
     """
     if not block:
         return None
@@ -286,12 +247,8 @@ def flight_to_row(flight: dict) -> Optional[dict]:
         if arr_sched is not None else None
     )
 
-    # The calendar block the feature pipeline expects. Computed from the same
-    # unit-tested helpers 03_silver uses, so a live row and a training row derive
-    # these fields identically — including Spark's 1=Sunday day-of-week
-    # convention, which is off by one from Python's if taken directly.
-    # Local date, as BTS FL_DATE is. A 22:00 local departure is the next day in
-    # UTC, and dating it that way would move it to the wrong day of the week.
+    # Calendar fields from the same helpers 03_silver uses (Spark's 1=Sunday day of
+    # week), dated by local departure as BTS FL_DATE is.
     flight_day = dep_local.date()
     dow = spark_day_of_week(flight_day)
 
@@ -321,9 +278,7 @@ def flight_to_row(flight: dict) -> Optional[dict]:
         "origin_airport_code": dep_ap.get("iata"),
         "destination_airport_code": arr_ap.get("iata"),
         "flight_date": flight_day,
-        # Kept for display and for joining against the OpenSky snapshot, which is
-        # timestamped in UTC. The features above are local; these two are not, and
-        # naming them makes the difference impossible to miss.
+        # UTC instant and origin zone, for display and the OpenSky join.
         "scheduled_departure_utc": dep_sched,
         "origin_timezone": dep_ap.get("timeZone"),
         "crs_dep_time": crs_dep,

@@ -1,12 +1,6 @@
-"""Shared matplotlib styling for every chart in this project.
+"""Shared matplotlib styling, so every chart in the project looks like one piece of work.
 
-Centralising the palette and axis treatment means the notebooks produce
-charts that look like they belong to the same piece of work, rather than
-matplotlib defaults. Import this instead of restyling in each notebook.
-
-Serverless note: matplotlib ships with the runtime. seaborn is deliberately
-not used — its default theme is recognisable and adds a dependency for
-styling we can do in 40 lines.
+matplotlib ships with the serverless runtime; seaborn is deliberately not used.
 """
 
 from __future__ import annotations

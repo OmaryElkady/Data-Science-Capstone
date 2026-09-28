@@ -1,29 +1,11 @@
 """Vector-index bookkeeping for the assembled feature vector.
 
-Unlike `src.features`, this module imports PySpark: it inspects a fitted
-`PipelineModel` and therefore cannot be unit-tested without a cluster. It is
-kept separate for exactly that reason.
+A one-hot column occupies one slot per category, so a column's position among the
+VectorAssembler inputs is not its index in the vector, and the vector's `ml_attr` metadata
+does not survive StandardScaler plus a Delta round-trip. The expansion is computed here,
+written to the feature manifest by 04_gold, and read by 05_train and 07_score.
 
-Why this exists
----------------
-`04_gold` assembles numerics, booleans, and one-hot blocks into a single
-`features` vector. A one-hot column occupies as many vector slots as it has
-categories, so the position of a column in `VectorAssembler.getInputCols()` is
-*not* its index in the vector. The original feature manifest recorded the
-former and called it `position`, which is correct only for the dense block at
-the front and silently wrong after it — a magic index into a feature vector is
-how target leakage gets in without anything raising.
-
-Reading the index out of the vector's own `ml_attr` metadata would be the
-obvious alternative, but that metadata does not survive: `04_gold` finishes with
-a `StandardScaler`, which does not propagate its input's attribute names, and
-the vector then round-trips through a Delta write. Confirmed empirically on the
-first full run — `05_train` reported names resolved from the saved pipeline, not
-from metadata.
-
-So the expansion is computed once here, written to the feature manifest by
-`04_gold`, and read back by `05_train`. The manifest becomes the contract
-between the two notebooks rather than a decorative table nothing consults.
+Imports PySpark (it inspects a fitted PipelineModel), so CI does not unit-test it.
 """
 
 from __future__ import annotations

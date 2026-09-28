@@ -1,46 +1,11 @@
-"""OpenSky Network client: live aircraft state, and the phase split it enables.
+"""OpenSky Network client: live aircraft state and departure history.
 
-Why this exists alongside AviationStack
----------------------------------------
-`06_api_ingest` calls AviationStack once per origin/destination pair. The dataset
-holds 7,675 distinct routes, so covering them once costs 7,675 calls and
-refreshing every fifteen minutes costs that again, every fifteen minutes.
+`/states/all` returns every aircraft over the US in one call, each with `on_ground`,
+`callsign` and `icao24`. `06_api_ingest` finds a flight's aircraft by `icao24` (AeroDataBox's
+`aircraft.modeS`, a specific airframe) and falls back to the callsign.
 
-OpenSky's `/states/all` returns every aircraft the network is currently tracking
-in a single request. Measured against the continental US bounding box: **8,166
-aircraft in one 1.1 MB response**, of which 2,893 carried callsigns belonging to
-US carriers present in the BTS data. Call count stops scaling with the number of
-flights and scales only with polling frequency.
-
-Each state vector also carries `on_ground`, which is exactly the split the two
-models need — `True` is the pre-departure population, `False` is the in-flight
-population. No extra query, no classifier.
-
-The division of labour
-----------------------
-OpenSky decides *which* flights are worth asking about. AviationStack answers
-*how late* they were.
-
-That split is deliberate. The model trains on BTS `DEP_DELAY`, which is **gate**
-departure delay. OpenSky observes when an airframe stops being `on_ground`, which
-is **wheels-off**. The two differ by taxi-out time — minutes at a small field,
-far more at a congested hub — so deriving delay from OpenSky would inject a bias
-that is worst exactly where delay matters most, and would do it silently.
-AeroDataBox's `revisedTime - scheduledTime` is already on gate semantics, so it
-is the value that gets served.
-
-Joining the two
----------------
-AeroDataBox returns `callSign` (e.g. `"DAL1234"`) and `aircraft.modeS` (e.g.
-`"A34729"`). OpenSky broadcasts `callsign` in the same ICAO form, space-padded
-(e.g. `"DAL1234 "`), and keys its state vectors on `icao24`, which is the same
-24-bit airframe address as `modeS`. After stripping and case-folding both are
-directly comparable — no IATA-to-ICAO mapping table is needed, because the
-provider supplies both identifiers itself.
-
-The airframe address is the stronger of the two joins and is tried first:
-codeshares share a flight number but not an aeroplane, and a flight number
-recurs daily while an airframe address does not.
+OpenSky's times are wheels-off, which differ from BTS gate times by taxi-out, so they locate
+a flight and corroborate its schedule but are never used as delays.
 """
 
 from __future__ import annotations
@@ -124,21 +89,8 @@ def fetch_states(
 class OpenSkyClient:
     """Holds credentials, hands out a valid bearer token, fetches state.
 
-    What actually expires
-    ---------------------
-    The `clientId` / `clientSecret` pair is long-lived: store it in Databricks
-    secrets once and leave it. The *access token* minted from it lasts 1,800
-    seconds. Nothing about that requires re-saving a secret — the token is
-    derived at runtime and never persisted.
-
-    So why a manager? Because a token fetched at the top of a notebook is dead
-    thirty minutes later, and a scoring job that outlives that window would fail
-    partway with a 401 having already done most of its work. This refreshes on
-    demand: every call checks the clock first, and a 401 mid-flight forces one
-    re-auth and retry in case the token was revoked early.
-
-    `token_fn` and `clock` are injectable so the expiry logic can be tested
-    without network access or real waiting.
+    Access tokens last 30 minutes, so the token is refreshed on demand, and a 401 triggers one
+    re-auth and retry. `token_fn` and `clock` are injectable for tests.
     """
 
     def __init__(
@@ -250,28 +202,11 @@ def fetch_departures(client, airport_icao: str, days: int = 5) -> list[dict]:
 
 
 def derive_schedule(records: Iterable[dict], min_observations: int = 3) -> dict[str, dict]:
-    """A de-facto timetable, built from when flights *actually* left.
+    """A de-facto timetable from when each callsign was actually seen departing.
 
-    OpenSky publishes no schedule. But a flight number is a recurring daily
-    service, so the median time of day at which a callsign has been observed
-    getting airborne is a usable stand-in for when it is meant to go — derived
-    from observation rather than from a paid feed.
-
-    Two things come out of it, and the second is the more interesting:
-
-    `median_minute`  the middle of the observed departures, in minutes past
-                     midnight UTC. A stand-in for the scheduled time.
-    `spread_minutes` the range across observations. A flight that always leaves
-                     within twenty minutes of the same time is a different
-                     proposition from one that varies by two hours, and no
-                     published schedule says which is which.
-
-    Median rather than mean, because a single three-hour delay would drag a mean
-    somewhere the flight has never actually departed.
-
-    The caveat that matters: this is **wheels-off**, and the models are trained on
-    BTS gate delay. The two differ by taxi-out. Used to corroborate or to fall
-    back on, never as a drop-in for a scheduled gate time.
+    Per callsign: `median_minute` / `median_hhmm` (typical wheels-off time, UTC),
+    `spread_minutes` (how much it varies) and `observations`. Median, so one long delay does not
+    drag it. Wheels-off rather than gate time: for corroboration, never as a delay.
     """
     import statistics
     import time as _time
@@ -347,17 +282,10 @@ def split_by_phase(rows: Iterable[dict]) -> tuple[list[dict], list[dict]]:
 def match_by_airframe(
     rows: Iterable[dict], icao24_addresses: Iterable[str]
 ) -> tuple[list[dict], dict[str, Any]]:
-    """Match on the ICAO 24-bit airframe address — the strongest join available.
+    """Match on the ICAO 24-bit airframe address (AeroDataBox `modeS`, OpenSky `icao24`).
 
-    AeroDataBox returns `aircraft.modeS` for a scheduled flight, and that is the
-    same identifier OpenSky broadcasts as `icao24`. Matching on it identifies a
-    specific aeroplane rather than a flight number, which sidesteps two problems
-    at once: codeshares share a number but not an airframe, and a number is
-    reused daily while an address is not.
-
-    Callsign matching remains useful as a fallback when the provider has no
-    aircraft assigned yet — typically a flight far enough ahead that no tail has
-    been allocated.
+    It identifies a specific aircraft, so codeshares and the daily reuse of a flight number do
+    not confuse it. Callsign matching is the fallback when no aircraft is assigned yet.
     """
     wanted = {a.strip().lower() for a in icao24_addresses if a}
     rows = list(rows)

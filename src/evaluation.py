@@ -1,18 +1,8 @@
-"""Evaluation helpers for imbalanced binary classification on Spark.
+"""Evaluation helpers for imbalanced binary classification, DataFrame-only.
 
-Two constraints shaped this module:
-
-1. Databricks serverless has no RDD API, so `pyspark.mllib`'s
-   `BinaryClassificationMetrics` is unavailable. Everything here is
-   DataFrame-only.
-2. Spark's `BinaryClassificationEvaluator` returns ROC-AUC and PR-AUC but
-   no threshold-dependent metrics, and `MulticlassClassificationEvaluator`
-   defaults to weighted averages that flatter the majority class. The
-   positive class is the one we care about, so metrics here are computed
-   for label 1 explicitly.
-
-Every sweep is a single pass over the data — thresholds are evaluated as
-parallel aggregations rather than in a Python loop of `.count()` calls.
+Serverless has no RDD API, so pyspark.mllib's BinaryClassificationMetrics is unavailable,
+and Spark's evaluators give no threshold-dependent metrics for the positive class. Metrics
+here are for label 1, and each threshold sweep is a single aggregation pass.
 """
 
 from __future__ import annotations
@@ -26,13 +16,8 @@ from pyspark.sql import functions as F
 
 POSITIVE_PROBABILITY = "p1"
 
-# The column the registered champion serves calibrated probabilities in.
-#
-# `05_train` folds an isotonic calibrator into the champion pipeline under this
-# name and selects the decision threshold on that scale; `07_score` reads the
-# same column. Naming it here rather than in either notebook is what keeps the
-# two ends agreeing: a threshold chosen on one scale and applied to another is
-# silently wrong everywhere it is used, and nothing raises.
+# Column holding the calibrated probability. 05_train selects the threshold on it
+# and 07_score applies it, so both ends use the same scale.
 CALIBRATED_PROBABILITY = "p_calibrated"
 
 
@@ -169,16 +154,9 @@ def full_report(
 ) -> dict:
     """Every headline metric at one decision threshold, plus the AUCs.
 
-    `prob_col` names the probability the decision is made on. Left unset, it is
-    extracted from Spark's `probability` vector, which is the raw model score.
-    Pass `CALIBRATED_PROBABILITY` when the model carries a calibrator, so the
-    reported precision/recall/F1/Brier are the ones the deployed model actually
-    produces rather than the ones a discarded intermediate would have.
-
-    The two AUCs stay on the raw `probability` vector deliberately. Both measure
-    ranking only, and calibration is monotonic, so they are identical on either
-    scale — reading them from the column Spark's evaluator already understands
-    avoids re-assembling a vector to compute a number that cannot change.
+    `prob_col` is the probability the decision is made on; pass CALIBRATED_PROBABILITY for a
+    calibrated model. The AUCs are read from the raw `probability` vector, which gives the same
+    result because calibration is monotonic.
     """
     scored = df if prob_col else with_positive_probability(df)
     column = prob_col or POSITIVE_PROBABILITY

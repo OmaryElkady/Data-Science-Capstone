@@ -65,15 +65,11 @@ def spark_day_of_week(d: date) -> int:
 
 
 def build_date_dimension(start: date, end: date) -> list[dict]:
-    """One row per calendar date, with every derived temporal flag precomputed.
+    """One row per calendar date with every derived temporal flag precomputed.
 
-    Replaces four Python UDFs evaluated once per flight row. The dataset has
-    roughly two million rows spanning about two thousand distinct dates, so the
-    holiday lookups run ~1000x fewer times, and the join that applies them runs
-    entirely in the JVM instead of serialising each row to a Python worker.
-
-    Returned columns match the Spark builtins they replace exactly:
-    `dayofweek` (1=Sunday), `weekofyear` (ISO), `quarter`, `month`.
+    Joined onto flights instead of running Python UDFs per row (about 2,000 dates against 2M
+    rows). Columns match the Spark builtins they replace: dayofweek (1=Sunday), weekofyear
+    (ISO), quarter, month.
     """
     if end < start:
         raise ValueError(f"end {end} precedes start {start}")
