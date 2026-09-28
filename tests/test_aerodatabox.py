@@ -247,7 +247,7 @@ class TestTimezoneHandling:
     """Clock-time features are LOCAL; durations and delays are UTC.
 
     BTS records CRS_DEP_TIME as local time at the origin, so the model learned
-    hour-of-day risk on a local clock — 02_eda measured 05:00 as the quietest
+    hour-of-day risk on a local clock — 03_eda measured 05:00 as the quietest
     hour and 19:00 as the worst, both local. Projecting a UTC hour puts the
     flight at a different point on that curve, and nothing about the mistake is
     visible at run time: the number is plausible, just wrong.
@@ -327,7 +327,7 @@ class TestTimezoneHandling:
 class TestCalendarBlock:
     """A live row and a training row must derive these identically.
 
-    03_silver builds them from src.features; so does this. If the two ever
+    02_silver builds them from src.features; so does this. If the two ever
     diverge, the model is scored on features that mean something different from
     the ones it learned, and nothing about that failure is visible at run time.
     """

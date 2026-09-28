@@ -247,7 +247,7 @@ def flight_to_row(flight: dict) -> Optional[dict]:
         if arr_sched is not None else None
     )
 
-    # Calendar fields from the same helpers 03_silver uses (Spark's 1=Sunday day of
+    # Calendar fields from the same helpers 02_silver uses (Spark's 1=Sunday day of
     # week), dated by local departure as BTS FL_DATE is.
     flight_day = dep_local.date()
     dow = spark_day_of_week(flight_day)
