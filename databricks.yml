@@ -2,6 +2,7 @@
 #
 #   databricks bundle validate -t dev
 #   databricks bundle deploy   -t dev
+#   databricks bundle deploy   -t prod     # the route watch's live schedule
 #   databricks bundle run flight_delay_training -t dev
 #   databricks bundle run flight_delay_scoring  -t dev
 #   databricks bundle run flight_delay_route_watch -t dev
@@ -20,8 +21,8 @@
 #                             it and its route against the @champion models.
 #
 #   flight_delay_route_watch  daily. Forecasts a few flights on each watched route
-#                             and grades earlier forecasts once they land. Shipped
-#                             PAUSED -- see the note on its schedule.
+#                             and grades earlier forecasts once they land. Runs
+#                             only from the prod target; dev deploys it paused.
 #
 # 03_eda and 09_rotation_probe are deliberately absent from all three. Neither writes
 # anything; they are analysis for the reader, not pipeline stages, and running
@@ -36,13 +37,30 @@
 bundle:
   name: flight-delay-platform
 
+variables:
+  watch_schedule:
+    description: PAUSED or UNPAUSED for the route watch's daily schedule.
+    default: PAUSED
+
+# No `host` in either target: it resolves from the CLI profile
+# (DATABRICKS_HOST / ~/.databrickscfg). Hardcoding a workspace URL in a public
+# repo both leaks the workspace and pins the bundle to one account.
 targets:
+  # A personal sandbox. Development mode prefixes job names with [dev <user>]
+  # and pauses every schedule it deploys, whatever the job says.
   dev:
     mode: development
     default: true
-    # No `host` here on purpose: it resolves from the CLI profile
-    # (DATABRICKS_HOST / ~/.databrickscfg). Hardcoding a workspace URL in a
-    # public repo both leaks the workspace and pins the bundle to one account.
+
+  # Where the schedule actually runs. Production mode deploys schedules as
+  # written, so the route watch starts on deploy. Pause it with
+  #   databricks bundle deploy -t prod --var watch_schedule=PAUSED
+  prod:
+    mode: production
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      watch_schedule: UNPAUSED
 
 resources:
   jobs:
@@ -202,9 +220,9 @@ resources:
         # flights have all landed and most of today's are still ahead.
         quartz_cron_expression: "0 0 11 * * ?"
         timezone_id: UTC
-        # Unpause for a collection window, then pause again. The notebook's quota
-        # reserve stops API calls either way, but compute is still spent daily.
-        pause_status: PAUSED
+        # Set per target (see `variables`): paused in dev, running in prod. The
+        # notebook's quota reserve stops API calls either way.
+        pause_status: ${var.watch_schedule}
 
       email_notifications:
         on_failure:
