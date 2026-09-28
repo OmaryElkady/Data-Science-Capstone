@@ -8,7 +8,7 @@
 ![MLflow](https://img.shields.io/badge/MLflow-3.8-0194E2?logo=mlflow&logoColor=white)
 ![Unity Catalog](https://img.shields.io/badge/Unity%20Catalog-%40champion-1B3139)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-159%20passing-success)
+![Tests](https://img.shields.io/badge/tests-185%20passing-success)
 
 A Bronze→Silver→Gold Delta pipeline over 3M BTS flight records, feeding two Spark ML models
 registered in Unity Catalog and served against live flights from two APIs.
@@ -88,6 +88,7 @@ predicts almost nothing and scores **F1 = 0.0031**.
 | Ingest | `06_api_ingest` | `api_silver_flights`, `opensky_states` | per run |
 | Scoring | `07_score` | `flight_delay_predictions`, `alternative_flight_recommendations` | per run |
 | Monitoring | `08_monitor` | `prediction_monitoring` | resolved forecasts |
+| Route watch | `10_route_watch` | `api_silver_flights` (`row_kind = 'watch'`) | 3 routes daily |
 | EDA | `03_eda` | nothing — analysis only | — |
 
 ---
@@ -318,7 +319,7 @@ speedup         :   27.29x          (200,000-row sample, .write.format("noop"))
 of 2019, so the refactor is proven rather than hoped for. `spark_day_of_week` pins Spark's
 1=Sunday convention against Python's 0=Monday — a silent one-day shift otherwise.
 
-**159 tests**, no cluster required. Fixtures are recorded live payloads, so the parsers are
+**185 tests**, no cluster required. Fixtures are recorded live payloads, so the parsers are
 tested against the shape the APIs actually return.
 
 ---
@@ -341,7 +342,7 @@ CI therefore never executes `01`-`08`. It cannot. What it can do is catch every 
 does not need a cluster, and four jobs do that:
 
 - **Lint** - `flake8` on `src/` and `tests/`, `nbqa flake8` on the notebooks
-- **Unit tests** - 159 tests with coverage. `src/*.py` holds no module-level `SparkSession`,
+- **Unit tests** - 185 tests with coverage. `src/*.py` holds no module-level `SparkSession`,
   by design, which is what lets the suite run without installing PySpark
 - **Notebook contracts** - `tools/validate_notebooks.py`: every cell parses, every
   `config.X` resolves, every notebook carries its contract header, and no cell reads a name
@@ -398,7 +399,7 @@ untouched by the live path.
 
 ### Jobs are defined in code, not in the UI
 
-`databricks.yml` is a Databricks Asset Bundle, and it is the source of truth for both jobs.
+`databricks.yml` is a Databricks Asset Bundle, and it is the source of truth for all three jobs.
 Deploying it creates them in the workspace, where they behave exactly like jobs built by
 clicking: they appear under **Jobs & Pipelines**, run from the UI, and show the same run
 history and task graph. The difference is where the definition lives - a job built in the
@@ -409,20 +410,22 @@ pip install databricks-cli          # or: brew install databricks/tap/databricks
 databricks auth login --host https://<your-workspace>.cloud.databricks.com
 
 databricks bundle validate -t dev   # parses, resolves every notebook_path
-databricks bundle deploy   -t dev   # creates/updates both jobs in the workspace
+databricks bundle deploy   -t dev   # creates/updates all three jobs in the workspace
 ```
 
-The jobs then appear as `[dev <your-username>] flight-delay-training` and
-`[dev <your-username>] flight-delay-scoring`. Run them from the UI, or:
+The jobs then appear as `[dev <your-username>] flight-delay-training`,
+`[dev <your-username>] flight-delay-scoring` and `[dev <your-username>] flight-delay-route-watch`.
+Run them from the UI, or:
 
 ```bash
 databricks bundle run flight_delay_training -t dev
 ```
 
 **What `mode: development` does for you.** It prefixes job names so a deploy cannot collide
-with anything else in the workspace, and it force-pauses every schedule. The scoring job is
+with anything else in the workspace, and it force-pauses every schedule. The route watch is
 declared `PAUSED` as well, deliberately: a live schedule on a metered free tier consumes
-quota every morning whether or not anyone is watching.
+quota every morning whether or not anyone is watching. To collect, deploy, then press
+**Resume** on its schedule in the Jobs UI; the next deploy pauses it again.
 
 **One gotcha worth knowing.** `bundle deploy` uploads the notebooks from your *local working
 tree* to a bundle-managed workspace path, and the deployed job runs that copy - not the
@@ -432,7 +435,8 @@ local checkout last had. (A job can instead be pointed at a `git_source` so it p
 branch at run time, which removes the step at the cost of making every run depend on GitHub.)
 
 Training is manual and expensive - a full `05_train` run is a 25-trial TPE search plus blocked
-CV on ~1.3M rows. Scoring is cheap and its schedule ships paused.
+CV on ~1.3M rows. Scoring one flight is manual and cheap. The route watch is the only
+scheduled job, and it ships paused.
 
 ---
 
@@ -595,6 +599,42 @@ half of a movement and no arrival time at all, so their `arrival_delay` is null 
 They are route context, not forecasts, and counting them as "outstanding" described a queue
 that would never drain. A cancelled flight is the other kind - it has an outcome, and that
 outcome is neither on time nor late, so the 15-minute rule cannot grade it either.
+
+
+### The route watch
+
+Manual runs of `06` produce a graded forecast only when someone remembers to come back after
+the flight lands, and `08` needs 30 per model before it will draw anything. The route watch
+removes the person from the loop. Every morning at 11:00 UTC, `10_route_watch`:
+
+1. **grades earlier forecasts** — one status call per flight it forecast on a previous day,
+   collecting the outcome once the provider reports `Arrived`;
+2. **forecasts today** — one airport query per watched route, keeping up to three departures
+   spread across the next 12 hours, every one still ahead of its departure time.
+
+`07` and `08` then run as usual. A condition task skips them on a morning that wrote nothing,
+so an empty run never re-scores yesterday's forecasts.
+
+| Route | Origin time zone |
+|---|---|
+| ATL → JFK | Eastern |
+| ORD → LGA | Central |
+| LAX → SFO | Pacific |
+
+Three busy routes in three time zones, so the hour-of-day and carrier mix is not one
+airport's. Each run prints the carriers it finds on every route; ATL → JFK showed Delta,
+JetBlue and Frontier on 2026-09-28. The routes and the per-route count are settings in `src/config.py`, and
+the notebook takes a `ROUTES` widget to override them for a single run.
+
+**Budget.** An airport query costs 2 AeroDataBox units, measured from the quota headers; each
+outcome is one flight-status call. The notebook prints the remaining units after every run,
+so the real daily cost is visible from the first one — expect roughly 15–25 of the 400
+monthly units for the default nine flights. The notebook stops calling the API once the remaining units reach
+`AERODATABOX_QUOTA_RESERVE`, so a schedule left running cannot spend what manual runs of `06`
+need. At nine forecasts a day, two weeks should give 30 or more graded pre-departure forecasts.
+
+This is the only evaluation in the project on flights from after the training period: the
+models were trained on 2019–2023, and the watch grades them on 2026.
 
 ---
 
