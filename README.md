@@ -616,7 +616,7 @@ outcome is neither on time nor late, so the 15-minute rule cannot grade it eithe
 
 Manual runs of `06` produce a graded forecast only when someone remembers to come back after
 the flight lands, and `08` needs 30 per model before it will draw anything. The route watch
-removes the person from the loop. Every morning at 11:00 UTC, `10_route_watch`:
+removes the person from the loop. Every morning at 09:00 UTC, `10_route_watch`:
 
 1. **grades earlier forecasts** — one status call per flight it forecast on a previous day,
    collecting the outcome once the provider reports `Arrived`;
