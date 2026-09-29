@@ -81,3 +81,6 @@ kaggle_workspace/
 
 # OneDrive folder metadata, created wherever this repo syncs
 desktop.ini
+
+# Playwright MCP screenshots, snapshots and console logs
+.playwright-mcp/
