@@ -8,7 +8,7 @@
 ![MLflow](https://img.shields.io/badge/MLflow-3.8-0194E2?logo=mlflow&logoColor=white)
 ![Unity Catalog](https://img.shields.io/badge/Unity%20Catalog-%40champion-1B3139)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-185%20passing-success)
+![Tests](https://img.shields.io/badge/tests-225%20passing-success)
 
 A Bronze→Silver→Gold Delta pipeline over 3M BTS flight records, feeding two Spark ML models
 registered in Unity Catalog and served against live flights from two APIs.
@@ -35,6 +35,12 @@ cascades within an operating day, a third window because the decision threshold 
 chosen on data the model trained on, a tie rule because a margin inside fold noise is not a
 result, and a threshold of 0.18 rather than 0.5 because at 0.5 the pre-departure model
 predicts almost nothing and scores **F1 = 0.0031**.
+
+Then the models meet flights that did not exist when they were trained. A scheduled job
+forecasts three busy routes every morning and grades each forecast once the flight lands.
+Over the first 57 graded pre-departure forecasts, the **ranking held (0.638 ROC-AUC on 2026
+flights, against 0.6231 on the 2023 test set) and the level did not**: the model expected
+19.4% of them to arrive late and 8.8% did. See [Forward test](#forward-test-2026-flights).
 
 ---
 
@@ -325,7 +331,7 @@ speedup         :   27.29x          (200,000-row sample, .write.format("noop"))
 of 2019, so the refactor is proven rather than hoped for. `spark_day_of_week` pins Spark's
 1=Sunday convention against Python's 0=Monday — a silent one-day shift otherwise.
 
-**185 tests**, no cluster required. Fixtures are recorded live payloads, so the parsers are
+**225 tests**, no cluster required. Fixtures are recorded live payloads, so the parsers are
 tested against the shape the APIs actually return.
 
 ---
@@ -348,7 +354,7 @@ CI therefore never executes `01`-`08`. It cannot. What it can do is catch every 
 does not need a cluster, and four jobs do that:
 
 - **Lint** - `flake8` on `src/` and `tests/`, `nbqa flake8` on the notebooks
-- **Unit tests** - 185 tests with coverage. `src/*.py` holds no module-level `SparkSession`,
+- **Unit tests** - 225 tests with coverage. `src/*.py` holds no module-level `SparkSession`,
   by design, which is what lets the suite run without installing PySpark
 - **Notebook contracts** - `tools/validate_notebooks.py`: every cell parses, every
   `config.X` resolves, every notebook carries its contract header, and no cell reads a name
@@ -578,45 +584,49 @@ asked about once". If `07` reports more than one, the table predates that behavi
 
 ## Monitoring, and why it is not retraining
 
-`08_monitor` grades forecasts against outcomes. A prediction resolves when the flight lands
-and a later run of `06` re-fetches it, filling in `arrival_delay`; `08` joins the two and
-writes `prediction_monitoring`.
+`08_monitor` grades forecasts against outcomes. Outcomes arrive through the route watch
+(below), which re-fetches each forecast flight after it lands, or through a re-run of `06` on a
+flight someone asked about.
 
 **It is deliberately not a retraining loop.** The obvious move is to accumulate live rows and
 feed them back into Gold. The numbers say not to. AeroDataBox's free tier is 400 units a
-month and `06` spends two calls a run, so the live path yields a handful of flights per run
-against **2,463,979** Gold rows - adding one percent to the training set would take years.
-
-Volume is not even the binding objection. Those rows are whichever flights someone typed into
-a widget, so they are a biased sample of one or two routes. Retraining on them would pull the
-model toward those routes and report it as improvement. Measuring that and declining to build
-it is the result.
+month, so the live path yields a few flights a day against **2,463,979** Gold rows, and
+adding one percent to the training set would take years. Volume is not even the binding
+objection: the rows come from three routes, so retraining on them would pull the model
+toward those routes and report it as improvement.
 
 The same rows answer three questions that nothing else in this repo can, because every other
 evaluation here is against a held-out slice of the same 2019-2023 extract:
 
-1. **Is it still calibrated?** The isotonic stage was fitted on 2022 and confirmed on 2023.
-   Calibration is a property of a distribution, not of a model, and distributions move.
-2. **Which cut was right?** The F1 cut the metrics use and the 50% call a person sees
-   disagree by construction. With outcomes the disagreement becomes scorable.
+1. **Does the ranking hold?** The test ROC-AUC was measured on 2023.
+2. **Is it still calibrated?** The isotonic stage was fitted on 2022. Calibration is a
+   property of a distribution, not of a model, and distributions move.
 3. **Does it fail when the NAS is degraded?** `07` records FAA conditions at prediction time
    and the model has never seen them. If misses concentrate under active conditions, that is
-   the evidence for collecting NAS history and building the feature. If they do not, the
-   caption stays a caption - and that is equally a result.
+   the evidence for collecting NAS history and building the feature.
 
-`08` reports per variant and never pools them. Which model made a call depends on the phase
-the aircraft was in when it was made, so a pool mixes them, and pooling would credit the 0.62
-model with the 0.93 model's accuracy. Below `MONITORING_MIN_SAMPLE` resolved flights it prints
-the count and **refuses to draw a reliability diagram**, because one drawn on eight flights
-looks exactly as authoritative as one drawn on eight thousand.
+**What counts as a graded forecast** is the part that took the most fixing:
 
-It also separates what is waiting from what is not. Only the flight of interest can ever
-resolve: alternatives come from the airport-departures endpoint, which returns the departure
-half of a movement and no arrival time at all, so their `arrival_delay` is null permanently.
-They are route context, not forecasts, and counting them as "outstanding" described a queue
-that would never drain. A cancelled flight is the other kind - it has an outcome, and that
-outcome is neither on time nor late, so the 15-minute rule cannot grade it either.
+- **It must come before what it claims not to know.** A pre-departure forecast counts only if
+  it was made before the scheduled departure, an in-flight one only if made before landing.
+  The route watch re-fetches flights whose outcome is slow to arrive, and one such re-fetch,
+  days later, re-scored four flights as if it were their morning forecast. Those rows are now
+  *retrospective*: shown, never graded, and never allowed to replace the real claim.
+- **The flight landed and the provider said so.** AeroDataBox's `revisedTime` exists before
+  the event as an estimate, so the outcome is read only once `status` is `Arrived`.
+- **Alternatives and cancellations are counted, not graded.** Alternatives come from the
+  airport feed, which carries no arrival time. A cancellation is an outcome the 15-minute rule
+  cannot score.
 
+Every row of `flight_delay_predictions` lands in exactly one of six states (graded, awaiting,
+no outcome, retrospective, context, cancelled), and `08` prints the full ledger first, so
+nothing is silently dropped. That logic lives in `src/monitoring.py` and is unit-tested,
+like the scorecard and the chart.
+
+`08` reports the two variants separately and never pools them: pooling would credit the 0.62
+model with the 0.93 model's accuracy. Below `MONITORING_MIN_SAMPLE` (30) graded forecasts it
+prints the outcomes and **refuses to draw a reliability diagram**, because one drawn on eight
+flights looks exactly as authoritative as one drawn on eight thousand.
 
 ### The route watch
 
@@ -626,8 +636,11 @@ removes the person from the loop. Every morning at 09:00 UTC, `10_route_watch`:
 
 1. **grades earlier forecasts** — one status call per flight it forecast on a previous day,
    collecting the outcome once the provider reports `Arrived`;
-2. **forecasts today** — one airport query per watched route, keeping up to three departures
-   spread across the next 12 hours, every one still ahead of its departure time.
+2. **forecasts today** — one airport query per watched route, covering the next 12 hours.
+   The window is cut into three bands and one departure is kept from each, so the hour-of-day
+   mix survives. Which flight in a band rotates with the date: the first week picked the
+   same flight numbers almost every day (57 graded forecasts covered only 25), which
+   graded the same few schedules over and over.
 
 `07` and `08` then run as usual. A condition task skips them on a morning that wrote nothing,
 so an empty run never re-scores yesterday's forecasts.
@@ -654,6 +667,52 @@ need. At nine forecasts a day, two weeks should give 30 or more graded pre-depar
 
 This is the only evaluation in the project on flights from after the training period: the
 models were trained on 2019–2023, and the watch grades them on 2026.
+
+### Forward test: 2026 flights
+
+As of **2026-10-05**: every graded pre-departure forecast from 2026-09-25 to 2026-10-04,
+each made before its flight left and checked after it landed. The in-flight model has one
+graded forecast, because the watch only forecasts flights that have not left yet; it is not
+evaluated here.
+
+| Pre-departure | Live (2026) | Beside |
+|---|---|---|
+| Graded forecasts | **57** (25 flight numbers, 8 days) | |
+| Arrived 15+ min late | **5 = 8.8%** (95% CI 3.8% to 18.9%) | 22.1% of October flights on these routes, 2019–2022 |
+| Mean predicted chance of delay | **19.4%** | |
+| ROC-AUC | **0.638** | 0.6231 on the 2023 test set |
+| Brier score | **0.0909** | 0.0800 for a constant at the observed rate |
+| 50% call accuracy | **91.2%** (none called LIKELY LATE) | 91.2% for "always on time" |
+| F1 cut (18%) | caught **4 of 5** late flights | by flagging 34 of 57 |
+
+![Forward test: predicted vs observed delay rate in five equal-count groups, and every graded pre-departure forecast plotted by predicted probability and outcome](docs/images/forward_test.png)
+
+**The ranking held.** On flights from three years after its training data, the model still
+puts late flights above on-time ones about as well as it did on the 2023 test set: four of the
+five late arrivals were above the 18% cut.
+
+**The level did not.** It predicted 19.4% and 8.8% arrived late, and 19.4% sits just above the
+95% interval of what was observed. The model's level matches the past: these routes ran 22.1%
+late in October across 2019–2022 (Silver). These two weeks of 2026 have been much more punctual
+than that history. That is the drift the isotonic stage cannot see, and it is why the Brier
+score loses to a constant at the observed rate. That constant is only knowable in hindsight,
+but it shows that the probabilities are too high for these weeks.
+
+**The 91.2% accuracy is not a result.** No forecast reached 50%, so every call was LIKELY ON
+TIME and the accuracy equals the share of flights that were on time. The table puts it next to
+that baseline so it cannot be read as skill.
+
+**What it would take to say more.** Five late flights is a small number to rest an AUC on, and
+these forecasts share routes and days. So one stormy afternoon at a hub moves several outcomes
+together. The intervals in the chart are that uncertainty, drawn. The fix is time, not
+modelling: the watch keeps running, and if the gap persists across a season, the remedy is to
+refit the calibrator on recent outcomes. That is cheaper than retraining and leaves the
+ranking, which is holding, untouched.
+
+**How good is the outcome data?** Three flights from 2026-10-03 were checked by hand against
+FlightAware. AeroDataBox's arrival times sat 2–7 minutes before the gate arrival, close enough
+for a 15-minute rule. Its departure times sat 8–23 minutes after pushback, consistent with
+wheels-off. That does not touch the label, but see **Limitations**.
 
 ---
 
@@ -695,6 +754,14 @@ than quoted on its own.
 90.4% of Gini importance, and Gini is biased toward high-cardinality features, which inflates
 the one-hot airport columns. Permutation importance on the test set is the unbiased
 alternative and was not run.
+
+**The live departure delay is not gate time.** Checked against FlightAware on three flights,
+AeroDataBox's departure times sat 8–23 minutes after pushback, which is what wheels-off would
+look like. BTS `DEP_DELAY`, which the in-flight model learned on, is measured at the gate. So a
+live `dep_delay` is inflated by taxi-out, and the in-flight model reads it as a later departure
+than it was. The arrival side, which the grading uses, was within 2–7 minutes. Correcting it
+would mean subtracting a taxi-out estimate per airport, and that is a guess this project does
+not make silently.
 
 **Live gate-delay data is a paid product.** This runs on free tiers: AeroDataBox's free plan
 is metered at 400 API units per month, and OpenSky's coverage is community ADS-B. Codeshares
