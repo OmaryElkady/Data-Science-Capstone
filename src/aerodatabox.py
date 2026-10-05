@@ -31,7 +31,10 @@ BASE_URL = f"https://{HOST}"
 
 # "dl1572", "DL 1572", "dl-1572" all mean the same flight. Accept what a person
 # would type; normalise before it reaches the API or a join key.
-_FLIGHT_RE = re.compile(r"^\s*([A-Za-z]{2,3})\s*[-]?\s*(\d{1,4})\s*$")
+# Carrier then number. IATA carrier codes are two characters and may hold a digit
+# (JetBlue B6, Frontier F9, Endeavor 9E); ICAO codes are three letters.
+_FLIGHT_RE = re.compile(
+    r"^\s*([A-Za-z]{3}|[A-Za-z][A-Za-z0-9]|[0-9][A-Za-z])\s*-?\s*(\d{1,4})\s*$")
 
 
 def normalise_flight_number(raw: str) -> str:
@@ -224,7 +227,7 @@ def flight_to_row(flight: dict) -> Optional[dict]:
     airline = flight.get("airline") or {}
     aircraft = flight.get("aircraft") or {}
     number = (flight.get("number") or "").replace(" ", "").upper()
-    digits = re.sub(r"^[A-Z]{2,3}", "", number)
+    parsed = _FLIGHT_RE.match(number)
 
     # Observed only once status confirms the event; the ungated values are kept as
     # estimated_* for display and are never graded against.
@@ -274,7 +277,7 @@ def flight_to_row(flight: dict) -> Optional[dict]:
         "aircraft_model": aircraft.get("model"),
         "airline_name": airline.get("name"),
         "airline_code": airline.get("iata"),
-        "fl_number": int(digits) if digits.isdigit() else None,
+        "fl_number": int(parsed.group(2)) if parsed else None,
         "origin_airport_code": dep_ap.get("iata"),
         "destination_airport_code": arr_ap.get("iata"),
         "flight_date": flight_day,

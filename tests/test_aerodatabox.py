@@ -44,6 +44,14 @@ class TestNormaliseFlightNumber:
     def test_three_letter_carrier_codes(self):
         assert normalise_flight_number("uae55") == "UAE55"
 
+    @pytest.mark.parametrize("raw, expected", [
+        ("B6 1520", "B61520"), ("f92195", "F92195"), ("9E5000", "9E5000"),
+    ])
+    def test_carrier_codes_with_a_digit(self, raw, expected):
+        # JetBlue, Frontier and Endeavor: a letters-only pattern rejected all three,
+        # so the route watch could never collect their outcomes.
+        assert normalise_flight_number(raw) == expected
+
     @pytest.mark.parametrize("bad", ["", "   ", "ATL", "1572", "DL", "DL15720000"])
     def test_rejects_non_flight_numbers(self, bad):
         with pytest.raises(ValueError):
@@ -138,6 +146,14 @@ class TestFlightToRow:
         row = flight_to_row(flight_payload[0])
         assert row["fl_number"] == 1572
         assert row["flight_iata"] == "DL1572"
+
+    def test_fl_number_for_a_carrier_code_with_a_digit(self, flight_payload):
+        # Was parsed as no number at all, then filled with 0 by 07: "B60".
+        payload = json.loads(json.dumps(flight_payload[0]))
+        payload["number"] = "B6 1520"
+        row = flight_to_row(payload)
+        assert row["fl_number"] == 1520
+        assert row["flight_iata"] == "B61520"
 
     def test_skips_records_with_no_departure_time(self):
         assert flight_to_row({"departure": {"airport": {"iata": "ATL"}},
