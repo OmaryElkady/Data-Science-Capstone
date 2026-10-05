@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from src.faa_nas import NasStatus, parse_status, summarise
+from src.faa_nas import NasStatus, is_general_aviation_only, parse_status, summarise
 
 FIXTURE = Path(__file__).parent / "fixtures" / "faa_nas_status.xml"
 
@@ -66,22 +66,45 @@ class TestLookup:
 
 class TestSummarise:
     def test_only_reports_requested_airports(self, status):
-        code = next(iter(status.airports_affected))
+        code = "MIA"
         lines = summarise(status, [code, "ZZZ"])
         assert lines and all(code in ln for ln in lines)
 
     def test_preserves_the_order_asked_for(self, status):
-        codes = sorted(status.airports_affected)[:2]
-        if len(codes) < 2:
-            pytest.skip("fixture has fewer than two affected airports")
+        codes = ["MIA", "BOS"]
         lines = summarise(status, codes)
         assert lines[0].startswith(codes[0])
 
     def test_deduplicates_and_ignores_blanks(self, status):
-        code = next(iter(status.airports_affected))
+        code = "SFO"
         once = summarise(status, [code])
         twice = summarise(status, [code, code, "", None])
         assert once == twice
 
     def test_clean_airports_produce_no_lines(self):
         assert summarise(NasStatus(), ["ATL", "IAH"]) == []
+
+    def test_general_aviation_closure_is_dropped(self, status):
+        # LAX's only condition is a standing closure to non-scheduled GA.
+        assert "LAX" in status.airports_affected
+        assert summarise(status, ["LAX"]) == []
+
+    def test_airline_conditions_survive_beside_a_ga_closure(self, status):
+        # SAN carries both a ground delay programme and a GA-only closure.
+        lines = summarise(status, ["SAN"])
+        assert len(lines) == 1 and "ground delay" in lines[0]
+
+    def test_full_closures_are_kept(self, status):
+        assert any("closure" in ln for ln in summarise(status, ["BGR"]))
+
+
+class TestGeneralAviationOnly:
+    def test_recognises_the_notam_wording(self):
+        assert is_general_aviation_only(
+            "LAX: closure (closed May 27 — !LAX 05/277 LAX AD AP CLSD TO NON SKED TRANSIENT GA ACFT)")
+
+    def test_a_ground_delay_is_not_ga_only(self):
+        assert not is_general_aviation_only("LGA: ground delay (avg 43 minutes)")
+
+    def test_a_full_closure_is_not_ga_only(self):
+        assert not is_general_aviation_only("BGR: closure (!BGR 09/041 BGR AD AP CLSD EXC EMERG ACFT)")

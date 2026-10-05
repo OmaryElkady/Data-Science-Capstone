@@ -10,6 +10,7 @@ Source: https://nasstatus.faa.gov/api/airport-status-information (XML, no key).
 
 from __future__ import annotations
 
+import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -17,6 +18,16 @@ from typing import Any, Optional
 import requests
 
 STATUS_URL = "https://nasstatus.faa.gov/api/airport-status-information"
+
+# NOTAM wording for a closure that only applies to non-scheduled general aviation,
+# e.g. "LAX AD AP CLSD TO NON SKED TRANSIENT GA ACFT". These stay posted for months
+# and no airline flight is subject to them.
+_GA_ONLY = re.compile(r"CLSD TO NON SKED|TRANSIENT GA", re.IGNORECASE)
+
+
+def is_general_aviation_only(text: str) -> bool:
+    """True for a closure line or NOTAM that only restricts general aviation."""
+    return "closure" in (text or "").lower() and bool(_GA_ONLY.search(text or ""))
 
 
 @dataclass
@@ -28,6 +39,11 @@ class AirportCondition:
     reason: str = ""
     detail: str = ""
     trend: str = ""
+
+    @property
+    def affects_airlines(self) -> bool:
+        """False for a standing closure to non-scheduled general aviation only."""
+        return not (self.kind == "closure" and _GA_ONLY.search(self.reason or ""))
 
     def describe(self) -> str:
         parts = [self.detail, self.reason]
@@ -120,11 +136,15 @@ def fetch_status(timeout: int = 20) -> NasStatus:
 
 
 def summarise(status: NasStatus, airports: Any) -> list[str]:
-    """One line per condition affecting any of `airports`, in reading order."""
+    """One line per condition affecting any of `airports`, in reading order.
+
+    General-aviation-only closures are left out: they never touch an airline flight.
+    """
     wanted = [a for a in dict.fromkeys(
         (x or "").strip().upper() for x in airports) if a]
     lines = []
     for code in wanted:
         for condition in status.for_airport(code):
-            lines.append(condition.describe())
+            if condition.affects_airlines:
+                lines.append(condition.describe())
     return lines
