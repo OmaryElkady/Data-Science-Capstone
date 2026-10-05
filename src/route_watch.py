@@ -59,21 +59,21 @@ def dedupe_same_minute(rows: Sequence[dict]) -> list[dict]:
 
 
 def spread_pick(rows: Sequence[dict], n: int,
-                key: str = "scheduled_departure_utc") -> list[dict]:
-    """Up to `n` rows spread evenly across the window, earliest first.
+                key: str = "scheduled_departure_utc", rotation: int = 0) -> list[dict]:
+    """Up to `n` rows, one from each of `n` equal bands of the window, earliest first.
 
-    Taking the first `n` would watch only the morning bank. Spreading them keeps
-    the hour-of-day mix, which is the model's strongest schedule signal.
+    Taking the first `n` would watch only the morning bank, so the window is cut into
+    bands to keep the hour-of-day mix. `rotation` picks a different flight within each
+    band: pass the day number and the watch stops grading the same flights every day,
+    which made 57 forecasts mostly repeats of the same 25 flight numbers.
     """
     ordered = sorted(rows, key=lambda r: r[key])
     if n <= 0:
         return []
     if len(ordered) <= n:
         return ordered
-    if n == 1:
-        return [ordered[len(ordered) // 2]]
-    step = (len(ordered) - 1) / (n - 1)
-    return [ordered[round(i * step)] for i in range(n)]
+    bounds = [round(i * len(ordered) / n) for i in range(n + 1)]
+    return [ordered[lo + rotation % (hi - lo)] for lo, hi in zip(bounds, bounds[1:])]
 
 
 def units_remaining(quota: dict) -> Optional[int]:

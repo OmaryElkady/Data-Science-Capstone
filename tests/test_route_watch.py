@@ -71,18 +71,32 @@ class TestDedupeSameMinute:
 
 
 class TestSpreadPick:
-    def test_spreads_across_the_day_instead_of_taking_the_first(self):
-        rows = [_row(h * 100, f"F{h}") for h in range(6, 21)]    # 15 departures
+    def test_one_pick_from_each_band_of_the_day(self):
+        rows = [_row(h * 100, f"F{h}") for h in range(6, 21)]    # 15 departures, 3 bands
         picked = [r["flight_iata"] for r in spread_pick(rows, 3)]
-        assert picked == ["F6", "F13", "F20"]
+        assert picked == ["F6", "F11", "F16"]
+
+    def test_rotation_moves_within_each_band(self):
+        rows = [_row(h * 100, f"F{h}") for h in range(6, 21)]
+        picked = [r["flight_iata"] for r in spread_pick(rows, 3, rotation=2)]
+        assert picked == ["F8", "F13", "F18"]
+
+    def test_consecutive_days_watch_different_flights(self):
+        rows = [_row(h * 100, f"F{h}") for h in range(6, 21)]
+        days = [{r["flight_iata"] for r in spread_pick(rows, 3, rotation=d)} for d in range(5)]
+        assert all(not (a & b) for a, b in zip(days, days[1:]))
+
+    def test_rotation_wraps_inside_a_band(self):
+        rows = [_row(h * 100, f"F{h}") for h in range(6, 21)]
+        assert spread_pick(rows, 3, rotation=5) == spread_pick(rows, 3, rotation=0)
 
     def test_returns_everything_when_there_are_few(self):
         rows = [_row(1200), _row(800)]
         assert [r["crs_dep_time"] for r in spread_pick(rows, 3)] == [800, 1200]
 
-    def test_one_pick_is_the_middle(self):
+    def test_one_pick_rotates_across_the_whole_window(self):
         rows = [_row(h * 100) for h in (6, 12, 18)]
-        assert spread_pick(rows, 1)[0]["crs_dep_time"] == 1200
+        assert [spread_pick(rows, 1, rotation=d)[0]["crs_dep_time"] for d in range(3)] == [600, 1200, 1800]
 
     def test_zero_picks_nothing(self):
         assert spread_pick([_row(900)], 0) == []
