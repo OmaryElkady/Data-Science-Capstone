@@ -8,7 +8,7 @@
 ![MLflow](https://img.shields.io/badge/MLflow-3.8-0194E2?logo=mlflow&logoColor=white)
 ![Unity Catalog](https://img.shields.io/badge/Unity%20Catalog-%40champion-1B3139)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-225%20passing-success)
+![Tests](https://img.shields.io/badge/tests-241%20passing-success)
 
 A Bronze→Silver→Gold Delta pipeline over 3M BTS flight records, feeding two Spark ML models
 registered in Unity Catalog and served against live flights from two APIs.
@@ -38,9 +38,11 @@ predicts almost nothing and scores **F1 = 0.0031**.
 
 Then the models meet flights that did not exist when they were trained. A scheduled job
 forecasts three busy routes every morning and grades each forecast once the flight lands.
-Over the first 57 graded pre-departure forecasts, the **ranking held (0.638 ROC-AUC on 2026
-flights, against 0.6231 on the 2023 test set) and the level did not**: the model expected
-19.4% of them to arrive late and 8.8% did. See [Forward test](#forward-test-2026-flights).
+Over the first 57 graded pre-departure forecasts the model **over-forecast delay**: it
+expected 19.4% to arrive late and 8.8% did, a gap whose 95% interval (+2.2 to +16.4 points,
+resampling whole days) excludes zero. Its 0.638 ROC-AUC matches the 2023 test set, but on five
+late flights the interval runs from 0.33 to 0.92, so the ranking is not established either way
+yet. See [Forward test](#forward-test-2026-flights).
 
 ---
 
@@ -331,7 +333,7 @@ speedup         :   27.29x          (200,000-row sample, .write.format("noop"))
 of 2019, so the refactor is proven rather than hoped for. `spark_day_of_week` pins Spark's
 1=Sunday convention against Python's 0=Monday — a silent one-day shift otherwise.
 
-**225 tests**, no cluster required. Fixtures are recorded live payloads, so the parsers are
+**241 tests**, no cluster required. Fixtures are recorded live payloads, so the parsers are
 tested against the shape the APIs actually return.
 
 ---
@@ -354,7 +356,7 @@ CI therefore never executes `01`-`08`. It cannot. What it can do is catch every 
 does not need a cluster, and four jobs do that:
 
 - **Lint** - `flake8` on `src/` and `tests/`, `nbqa flake8` on the notebooks
-- **Unit tests** - 225 tests with coverage. `src/*.py` holds no module-level `SparkSession`,
+- **Unit tests** - 241 tests with coverage. `src/*.py` holds no module-level `SparkSession`,
   by design, which is what lets the suite run without installing PySpark
 - **Notebook contracts** - `tools/validate_notebooks.py`: every cell parses, every
   `config.X` resolves, every notebook carries its contract header, and no cell reads a name
@@ -632,7 +634,7 @@ flights looks exactly as authoritative as one drawn on eight thousand.
 
 Manual runs of `06` produce a graded forecast only when someone remembers to come back after
 the flight lands, and `08` needs 30 per model before it will draw anything. The route watch
-removes the person from the loop. Every morning at 09:00 UTC, `10_route_watch`:
+removes the person from the loop. Every morning at 11:00 UTC, `10_route_watch`:
 
 1. **grades earlier forecasts** — one status call per flight it forecast on a previous day,
    collecting the outcome once the provider reports `Arrived`;
@@ -640,7 +642,14 @@ removes the person from the loop. Every morning at 09:00 UTC, `10_route_watch`:
    The window is cut into three bands and one departure is kept from each, so the hour-of-day
    mix survives. Which flight in a band rotates with the date: the first week picked the
    same flight numbers almost every day (57 graded forecasts covered only 25), which
-   graded the same few schedules over and over.
+   graded the same few schedules over and over;
+3. **catches one flight per route in the air**, for the in-flight model. The same query
+   starts two hours back. The airport feed marks a flight `Departed` and never updates it
+   to `Arrived`, so a departure alone does not prove the aircraft is still flying. A flight
+   counts only if its observed departure plus the route's median block time from Silver,
+   less 20 minutes, is still ahead. A forecast made after landing would be hindsight. At
+   11:00 UTC Atlanta and Chicago have early departures in the air; Los Angeles, at 04:00,
+   usually has none.
 
 `07` and `08` then run as usual. A condition task skips them on a morning that wrote nothing,
 so an empty run never re-scores yesterday's forecasts.
@@ -672,47 +681,50 @@ models were trained on 2019–2023, and the watch grades them on 2026.
 
 As of **2026-10-05**: every graded pre-departure forecast from 2026-09-25 to 2026-10-04,
 each made before its flight left and checked after it landed. The in-flight model has one
-graded forecast, because the watch only forecasts flights that have not left yet; it is not
-evaluated here.
+graded forecast, because the watch at first forecast only flights still on the ground. It now
+adds one airborne flight per route each morning, and its section will follow once it has 30.
 
 | Pre-departure | Live (2026) | Beside |
 |---|---|---|
 | Graded forecasts | **57** (25 flight numbers, 8 days) | |
 | Arrived 15+ min late | **5 = 8.8%** (95% CI 3.8% to 18.9%) | 22.1% of October flights on these routes, 2019–2022 |
 | Mean predicted chance of delay | **19.4%** | |
-| ROC-AUC | **0.638** | 0.6231 on the 2023 test set |
+| Calibration gap | **+10.6 pts** (95% CI +2.2 to +16.4) | 0 if calibrated |
+| ROC-AUC | **0.638** (95% CI 0.33 to 0.92) | 0.6231 on the 2023 test set; 0.5 is chance |
 | Brier score | **0.0909** | 0.0800 for a constant at the observed rate |
 | 50% call accuracy | **91.2%** (none called LIKELY LATE) | 91.2% for "always on time" |
 | F1 cut (18%) | caught **4 of 5** late flights | by flagging 34 of 57 |
 
-![Forward test: predicted vs observed delay rate in five equal-count groups, and every graded pre-departure forecast plotted by predicted probability and outcome](docs/images/forward_test.png)
+The intervals on the gap and the AUC **resample whole days**, not flights. Flights on one day
+share weather and hub congestion, so they are not independent, and treating them as if they
+were would draw the intervals too narrow. A claim is made only when its interval excludes the
+no-effect value.
 
-**The ranking held.** On flights from three years after its training data, the model still
-puts late flights above on-time ones about as well as it did on the 2023 test set: four of the
-five late arrivals were above the 18% cut.
+![Forward test dashboard: running predicted vs observed late rate, predicted vs observed by route, calibration in five equal-count groups, and every graded forecast by outcome](docs/images/forward_test.png)
 
-**The level did not.** It predicted 19.4% and 8.8% arrived late, and 19.4% sits just above the
-95% interval of what was observed. The model's level matches the past: these routes ran 22.1%
-late in October across 2019–2022 (Silver). These two weeks of 2026 have been much more punctual
-than that history. That is the drift the isotonic stage cannot see, and it is why the Brier
-score loses to a constant at the observed rate. That constant is only knowable in hindsight,
-but it shows that the probabilities are too high for these weeks.
+**What can be said: the model over-forecasts these weeks.** It predicted 19.4% late, and 8.8%
+arrived late. The gap's interval sits wholly above zero, and the gap points the same way on
+all three routes. The model's level matches the past: these routes ran 22.1% late in October
+across 2019–2022 (Silver). These two weeks of 2026 have been much more punctual than that. That
+is drift the isotonic stage cannot see, and it is why the Brier score loses to a constant at
+the observed rate. If it persists across a season, the remedy is to refit the calibrator on
+recent outcomes. That is far cheaper than retraining.
+
+**What cannot be said yet: whether the ranking held.** The AUC of 0.638 matches the 2023
+test set, but it rests on five late flights. Its interval, 0.33 to 0.92, includes a coin flip
+and includes a good model. Four of the five late arrivals were above the 18% cut, which is
+encouraging, and is also five flights.
 
 **The 91.2% accuracy is not a result.** No forecast reached 50%, so every call was LIKELY ON
-TIME and the accuracy equals the share of flights that were on time. The table puts it next to
+TIME and the accuracy equals the share of flights that were on time. The table puts it beside
 that baseline so it cannot be read as skill.
-
-**What it would take to say more.** Five late flights is a small number to rest an AUC on, and
-these forecasts share routes and days. So one stormy afternoon at a hub moves several outcomes
-together. The intervals in the chart are that uncertainty, drawn. The fix is time, not
-modelling: the watch keeps running, and if the gap persists across a season, the remedy is to
-refit the calibrator on recent outcomes. That is cheaper than retraining and leaves the
-ranking, which is holding, untouched.
 
 **How good is the outcome data?** Three flights from 2026-10-03 were checked by hand against
 FlightAware. AeroDataBox's arrival times sat 2–7 minutes before the gate arrival, close enough
 for a 15-minute rule. Its departure times sat 8–23 minutes after pushback, consistent with
-wheels-off. That does not touch the label, but see **Limitations**.
+wheels-off. That does not touch the label, but see **Limitations**. The one graded in-flight
+forecast shows why it matters: DL1034 was called 98.9% likely late on a recorded 41-minute
+departure delay, and it arrived 9 minutes late.
 
 ---
 
