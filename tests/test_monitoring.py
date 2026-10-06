@@ -4,8 +4,8 @@ import pandas as pd
 import pytest
 
 from src.monitoring import (
-    breakdown, claim_status, nas_affects_airlines, reliability, roc_auc, scorecard,
-    wilson, with_outcome,
+    breakdown, claim_status, day_bootstrap, headline, nas_affects_airlines, percent_table,
+    reliability, roc_auc, scorecard, timeline, wilson, with_outcome,
 )
 
 NOW = pd.Timestamp("2026-10-05T12:00:00Z")
@@ -158,5 +158,44 @@ def test_the_figure_draws(graded):
     import matplotlib
     matplotlib.use("Agg")
     from src.monitoring import forward_test_figure
-    fig = forward_test_figure(graded, f1_cut=0.18, label="pre-departure")
-    assert len(fig.axes) == 2
+    fig = forward_test_figure(graded.assign(route="ATL -> JFK"), f1_cut=0.18, label="pre-departure")
+    assert len(fig.axes) == 4
+
+
+@pytest.fixture
+def three_days(graded):
+    return graded.assign(flight_date=["2026-10-01"] * 4 + ["2026-10-02"] * 3 + ["2026-10-03"] * 3)
+
+
+class TestDayBootstrap:
+    def test_needs_three_days(self, graded):
+        assert day_bootstrap(graded, lambda s: s["p"].mean()) is None
+
+    def test_interval_brackets_the_estimate(self, three_days):
+        lo, hi = day_bootstrap(three_days, lambda s: s["late"].mean(), reps=500)
+        assert lo <= three_days["late"].mean() <= hi
+
+    def test_is_reproducible(self, three_days):
+        stat = lambda s: s["late"].mean()  # noqa: E731
+        assert day_bootstrap(three_days, stat, reps=200) == day_bootstrap(three_days, stat, reps=200)
+
+    def test_gives_up_when_the_statistic_rarely_exists(self, three_days):
+        assert day_bootstrap(three_days, lambda s: None, reps=50) is None
+
+
+class TestPresentation:
+    def test_timeline_ends_at_the_whole_sample(self, three_days):
+        t = timeline(three_days)
+        assert t["cum_forecasts"].tolist() == [4, 7, 10]
+        assert t["cum_observed"].iloc[-1] == pytest.approx(0.2)
+        assert t["cum_predicted"].iloc[-1] == pytest.approx(0.2)
+
+    def test_headline_carries_the_intervals(self, three_days):
+        text = headline(scorecard(three_days), "10 forecasts")
+        assert "predicted 20.0% late, observed 20.0% (2 of 10)" in text
+        assert "95% CI" in text
+
+    def test_percent_table_formats_rates_only(self, graded):
+        table = percent_table(breakdown(graded, "flight_date"))
+        assert table["observed_rate"].iloc[0] == "20.0%"
+        assert table["forecasts"].iloc[0] == 10
