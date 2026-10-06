@@ -35,8 +35,9 @@ def departure_window(now_utc: datetime, tz_name: str, lead_minutes: int,
                      hours: int) -> tuple[datetime, datetime]:
     """Local, naive start and end for an airport-departures query.
 
-    Starts `lead_minutes` from now at the origin, so every flight it returns can
-    still be forecast before it leaves. AeroDataBox caps one query at 12 hours.
+    Starts `lead_minutes` from now at the origin. A negative lead reaches back to
+    flights that have already left, which is how the watch finds one in the air.
+    AeroDataBox caps one query at 12 hours.
     """
     if hours > 12:
         raise ValueError("AeroDataBox caps one airport query at 12 hours")
@@ -44,6 +45,32 @@ def departure_window(now_utc: datetime, tz_name: str, lead_minutes: int,
     start = (local_now + timedelta(minutes=lead_minutes)).replace(
         second=0, microsecond=0, tzinfo=None)
     return start, start + timedelta(hours=hours)
+
+
+def ahead_of(rows: Sequence[dict], now_utc: datetime, lead_minutes: int) -> list[dict]:
+    """Rows still at least `lead_minutes` from departure: forecastable before they leave."""
+    cutoff = now_utc + timedelta(minutes=lead_minutes)
+    return [r for r in rows if r["scheduled_departure_utc"] >= cutoff]
+
+
+def still_airborne(rows: Sequence[dict], now_utc: datetime,
+                   block_minutes: dict, margin_minutes: int = 20) -> list[dict]:
+    """Departed flights that should still be in the air at `now_utc`.
+
+    The airport feed marks a flight `Departed` and never updates it to `Arrived`, so a
+    departure alone does not mean the aircraft is airborne. A flight qualifies when its
+    departure is observed and departure plus the route's typical block time, less a
+    margin, is still ahead of now. A forecast made after landing would be hindsight.
+    """
+    out = []
+    for r in rows:
+        block = block_minutes.get((r["origin_airport_code"], r["destination_airport_code"]))
+        if r.get("provider_phase") != "in_flight" or r.get("dep_delay") is None or block is None:
+            continue
+        left = r["scheduled_departure_utc"] + timedelta(minutes=r["dep_delay"])
+        if left <= now_utc < left + timedelta(minutes=block - margin_minutes):
+            out.append(r)
+    return out
 
 
 def dedupe_same_minute(rows: Sequence[dict]) -> list[dict]:

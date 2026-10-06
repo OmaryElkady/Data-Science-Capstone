@@ -6,10 +6,12 @@ import pytest
 
 from src.route_watch import (
     dedupe_same_minute,
+    ahead_of,
     departure_window,
     parse_routes,
     quota_exhausted,
     spread_pick,
+    still_airborne,
     units_remaining,
 )
 
@@ -51,6 +53,11 @@ class TestDepartureWindow:
         start, end = departure_window(self.NOW, "America/New_York", 60, 12)
         assert start.tzinfo is None and end.tzinfo is None
 
+    def test_a_negative_lead_reaches_back(self):
+        at_1100 = datetime(2026, 9, 28, 11, 0, tzinfo=timezone.utc)
+        start, end = departure_window(at_1100, "America/New_York", -120, 12)
+        assert (start, end) == (datetime(2026, 9, 28, 5, 0), datetime(2026, 9, 28, 17, 0))
+
     def test_respects_the_provider_cap(self):
         with pytest.raises(ValueError):
             departure_window(self.NOW, "America/New_York", 60, hours=13)
@@ -62,6 +69,48 @@ def _row(hhmm, flight="DL1"):
             "crs_dep_time": hhmm,
             "scheduled_departure_utc": datetime(2026, 9, 28, hhmm // 100, hhmm % 100,
                                                 tzinfo=timezone.utc)}
+
+
+def _flown(hhmm, dep_delay, phase="in_flight", flight="DL1"):
+    return dict(_row(hhmm, flight), provider_phase=phase, dep_delay=dep_delay)
+
+
+BLOCK = {("ATL", "JFK"): 140.0}
+AT_1100 = datetime(2026, 9, 28, 11, 0, tzinfo=timezone.utc)
+
+
+class TestAheadOf:
+    def test_keeps_only_flights_past_the_lead(self):
+        rows = [_row(1030), _row(1159), _row(1200), _row(1500)]
+        kept = [r["crs_dep_time"] for r in ahead_of(rows, AT_1100, 60)]
+        assert kept == [1200, 1500]
+
+
+class TestStillAirborne:
+    def test_a_flight_mid_route_is_airborne(self):
+        assert len(still_airborne([_flown(1000, 5.0)], AT_1100, BLOCK)) == 1
+
+    def test_a_flight_that_should_have_landed_is_not(self):
+        # Left 08:05 on a 140-minute route: down by about 10:25.
+        assert still_airborne([_flown(800, 5.0)], AT_1100, BLOCK) == []
+
+    def test_close_to_landing_is_left_out(self):
+        # Left 08:50: 130 minutes in, inside the 20-minute margin of a 140-minute block.
+        assert still_airborne([_flown(845, 5.0)], AT_1100, BLOCK) == []
+
+    def test_the_departure_delay_moves_the_clock(self):
+        # Scheduled 08:00 but left at 09:30, so still flying at 11:00.
+        assert len(still_airborne([_flown(800, 90.0)], AT_1100, BLOCK)) == 1
+
+    def test_not_departed_yet(self):
+        assert still_airborne([_flown(1030, 45.0)], AT_1100, BLOCK) == []
+
+    def test_needs_an_observed_departure(self):
+        assert still_airborne([_flown(1000, None)], AT_1100, BLOCK) == []
+        assert still_airborne([_flown(1000, 5.0, phase="pre_departure")], AT_1100, BLOCK) == []
+
+    def test_unknown_route_is_skipped(self):
+        assert still_airborne([_flown(1000, 5.0)], AT_1100, {}) == []
 
 
 class TestDedupeSameMinute:

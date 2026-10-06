@@ -217,7 +217,8 @@ resources:
 
       schedule:
         # 11:00 UTC is 07:00 in Atlanta and 04:00 in Los Angeles: yesterday's
-        # flights have all landed and most of today's are still ahead.
+        # flights have landed, most of today's are still ahead, and the first
+        # departures from ATL and ORD are in the air for the in-flight forecast.
         quartz_cron_expression: "0 0 11 * * ?"
         timezone_id: UTC
         # Set per target (see `variables`): paused in dev, running in prod. The

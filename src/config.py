@@ -138,6 +138,12 @@ WATCH_ORIGIN_TZ = {
 WATCH_MAX_PER_ROUTE = 3      # forecasts per route per day, spread across the window
 WATCH_WINDOW_HOURS = 12      # the provider's cap for one airport query
 WATCH_LOOKBACK_DAYS = 3      # how long to keep trying to collect an outcome
+# One flight per route already in the air, for the in-flight model: the morning query
+# reaches back this far, and a departed flight counts only if departure plus the
+# route's median block time, less the margin, is still ahead.
+WATCH_AIRBORNE_PER_ROUTE = 1
+WATCH_AIRBORNE_LOOKBACK_MINUTES = 120
+WATCH_AIRBORNE_MARGIN_MINUTES = 20
 # Below this many units the schedule stops calling AeroDataBox, leaving budget
 # for manual runs of 06.
 AERODATABOX_QUOTA_RESERVE = 40
